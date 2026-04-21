@@ -1,0 +1,214 @@
+import { WORLD, SHIP, METEOR, NPC, COLORS } from '../config.js';
+import { Ship } from '../entities/Ship.js';
+import { Meteor } from '../entities/Meteor.js';
+import { Ore } from '../entities/Ore.js';
+import { LocalInputController } from '../controllers/LocalInputController.js';
+import { NpcController } from '../controllers/NpcController.js';
+import { makePlaceholderTextures } from '../util/placeholderArt.js';
+import { Audio } from '../util/audio.js';
+
+export class GameScene extends Phaser.Scene {
+  constructor() { super('Game'); }
+
+  preload() {
+    // Placeholder retro sprites generated at runtime so the project runs with
+    // zero assets. Replace by dropping real PixelLab PNGs into /assets/sprites
+    // and switching this to this.load.image('ship_player', 'assets/sprites/ship_player.png') etc.
+    makePlaceholderTextures(this);
+  }
+
+  create(data = {}) {
+    this.playerName = data.playerName || this.playerName || 'PILOT';
+    Audio.attachToPhaser(this);
+    this.physics.world.setBounds(-WORLD.size / 2, -WORLD.size / 2, WORLD.size, WORLD.size);
+    this.cameras.main.setBackgroundColor('#05060c');
+
+    this._drawStarfield();
+    this._drawBoundary();
+
+    this.meteors = this.physics.add.group({ classType: Meteor });
+    this.ores = this.physics.add.group({ classType: Ore });
+    this.ships = [];
+
+    this._spawnMeteors();
+    this._spawnPlayer();
+    this._spawnNpcs();
+
+    // collisions
+    this.physics.add.collider(this.meteors, this.meteors);
+    this.physics.add.overlap(this.ships, this.ores, (ship, ore) => {
+      if (!ship.alive) return;
+      ship.addOre(ore.value);
+      if (ship.isPlayer) Audio.playPickup();
+      ore.destroy();
+    });
+    this.physics.add.collider(this.ships, this.meteors, (ship, meteor) => {
+      // graze damage: lose some fuel on hard hits
+      const v = Math.hypot(ship.body.velocity.x, ship.body.velocity.y);
+      if (v > SHIP.baseSpeed * 0.9) ship.fuel = Math.max(0, ship.fuel - 4);
+    });
+
+    this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+    this.cameras.main.setZoom(1);
+
+    this.scene.launch('HUD', { player: this.player });
+
+    // resize handling
+    this.scale.on('resize', (size) => {
+      this.cameras.main.setSize(size.width, size.height);
+    });
+  }
+
+  update(_time, deltaMs) {
+    const dt = deltaMs / 1000;
+
+    // drive all ships through their controllers
+    for (const ship of this.ships) ship.tick(dt);
+
+    // keep everything inside the circular world boundary
+    for (const ship of this.ships) this._clampToWorld(ship, SHIP.radius);
+    for (const m of this.meteors.getChildren()) {
+      if (m.active) this._clampToWorld(m, m.radius || 0);
+    }
+
+    // lasers + mining — each ship auto-fires at nearest meteor in range
+    for (const ship of this.ships) {
+      if (!ship.alive) { ship.drawLaser(null); continue; }
+      const target = this._nearestMeteor(ship, SHIP.laserRange);
+      ship.laserTarget = target;
+      ship.drawLaser(target);
+      if (target) {
+        const dead = target.damage(SHIP.laserDps * dt);
+        // player-only laser crackle, rate-limited so it doesn't become a drone
+        if (ship.isPlayer) {
+          this._lastLaserTick = this._lastLaserTick || 0;
+          if (_time - this._lastLaserTick > 90) {
+            Audio.playLaserTick();
+            this._lastLaserTick = _time;
+          }
+        }
+        if (dead) {
+          if (ship.isPlayer || Phaser.Math.Distance.Squared(this.player.x, this.player.y, target.x, target.y) < 500 * 500) {
+            Audio.playShatter();
+          }
+          this._shatterMeteor(target, ship);
+        }
+      }
+    }
+
+    // ore magnet + cleanup
+    for (const ore of this.ores.getChildren()) ore.tickMagnet(this.ships);
+
+    // keep meteor pool topped up
+    if (this.meteors.countActive(true) < METEOR.count * 0.7) this._spawnMeteors(10);
+  }
+
+  // ---------- spawns ----------
+
+  _spawnPlayer() {
+    this.player = new Ship(this, 0, 0, { isPlayer: true });
+    this.player.displayName = this.playerName;
+    this.player.setController(new LocalInputController(this));
+    this.ships.push(this.player);
+  }
+
+  _spawnNpcs() {
+    for (let i = 0; i < NPC.count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Phaser.Math.Between(400, WORLD.size * 0.4);
+      const npc = new Ship(this, Math.cos(a) * r, Math.sin(a) * r, { isPlayer: false });
+      npc.setController(new NpcController(this));
+      this.ships.push(npc);
+    }
+  }
+
+  _spawnMeteors(count = METEOR.count) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Phaser.Math.FloatBetween(WORLD.size * 0.08, WORLD.size * 0.48);
+      const x = Math.cos(a) * r;
+      const y = Math.sin(a) * r;
+      const radius = Phaser.Math.Between(METEOR.minR, METEOR.maxR);
+      this.meteors.add(new Meteor(this, x, y, radius));
+    }
+  }
+
+  _shatterMeteor(meteor, miner = null) {
+    // Bias the ore spray toward the ship that shattered the meteor so
+    // chunks drift toward the miner instead of flying off in random
+    // directions — makes catching much less fiddly.
+    const toward = miner ? Math.atan2(miner.y - meteor.y, miner.x - meteor.x) : null;
+    const yield_ = meteor.oreYield();
+    for (let i = 0; i < yield_; i++) this.ores.add(new Ore(this, meteor.x, meteor.y, 1, toward));
+    // if large, spawn a smaller fragment
+    if (meteor.radius > METEOR.minR * 2) {
+      const frag = new Meteor(this, meteor.x, meteor.y, Math.max(METEOR.minR, meteor.radius * 0.55));
+      this.meteors.add(frag);
+    }
+    meteor.destroy();
+  }
+
+  _nearestMeteor(ship, maxRange) {
+    let best = null;
+    let bd2 = maxRange * maxRange;
+    for (const m of this.meteors.getChildren()) {
+      if (!m.active || m.hp <= 0) continue;
+      const d2 = Phaser.Math.Distance.Squared(ship.x, ship.y, m.x, m.y);
+      if (d2 < bd2) { bd2 = d2; best = m; }
+    }
+    return best;
+  }
+
+  _drawBoundary() {
+    // circular edge of the playable world — ships can't cross this
+    const g = this.add.graphics();
+    g.setDepth(-6);
+    g.lineStyle(2, 0x3a4a78, 0.7);
+    g.strokeCircle(0, 0, WORLD.size / 2);
+    g.lineStyle(10, 0x3a4a78, 0.12);
+    g.strokeCircle(0, 0, WORLD.size / 2);
+  }
+
+  _clampToWorld(obj, bodyRadius = 0) {
+    const R = WORLD.size / 2 - bodyRadius;
+    const d2 = obj.x * obj.x + obj.y * obj.y;
+    if (d2 <= R * R) return;
+    const d = Math.sqrt(d2) || 1;
+    const nx = obj.x / d;
+    const ny = obj.y / d;
+    obj.x = nx * R;
+    obj.y = ny * R;
+    // cancel outward radial velocity so the body doesn't keep trying to escape
+    // (for meteors this also makes them appear to bounce along the edge)
+    if (obj.body) {
+      const vr = obj.body.velocity.x * nx + obj.body.velocity.y * ny;
+      if (vr > 0) {
+        obj.body.velocity.x -= vr * nx;
+        obj.body.velocity.y -= vr * ny;
+      }
+    }
+  }
+
+  _drawStarfield() {
+    // three parallax layers of static stars
+    const { size } = WORLD;
+    for (let layer = 0; layer < WORLD.starLayers; layer++) {
+      const g = this.add.graphics();
+      g.setDepth(-10 + layer);
+      g.fillStyle(COLORS.star, 0.3 + layer * 0.2);
+      const count = 200 - layer * 50;
+      for (let i = 0; i < count; i++) {
+        const x = Phaser.Math.Between(-size / 2, size / 2);
+        const y = Phaser.Math.Between(-size / 2, size / 2);
+        g.fillRect(x, y, 1 + layer, 1 + layer);
+      }
+      g.setScrollFactor(0.3 + layer * 0.2);
+    }
+  }
+
+  onPlayerOutOfFuel() {
+    Audio.playDeath();
+    Audio.stopMusic();
+    this.events.emit('player-dead');
+  }
+}
