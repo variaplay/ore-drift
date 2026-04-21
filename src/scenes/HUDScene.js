@@ -28,7 +28,9 @@ export class HUDScene extends Phaser.Scene {
     this.gameScene = this.scene.get('Game');
     const style = { fontFamily: 'ui-monospace, monospace', fontSize: '14px', color: '#cfe4ff' };
 
-    this.oreText = this.add.text(16, 16, 'ORE 0', style);
+    // player ore count lives in the leaderboard (row "YOU"); the tier badge
+    // is the only thing we show in the top-left corner
+    this.tierText = this.add.text(16, 16, 'T0', { ...style, color: '#7df9ff', fontStyle: 'bold' });
     this.fuelLabel = this.add.text(16, 36, 'FUEL', style);
     this.fuelBarBg = this.add.rectangle(66, 46, 160, 10, 0x1a2340).setOrigin(0, 0.5);
     this.fuelBar = this.add.rectangle(66, 46, 160, 10, 0x7df9ff).setOrigin(0, 0.5);
@@ -38,8 +40,9 @@ export class HUDScene extends Phaser.Scene {
 
     this._buildMinimap();
     this._buildLeaderboard();
-    this._buildMuteButton();
     this._lowFuelNextBeep = 0;
+    // M key still toggles mute; the on-screen label was removed by request
+    this.input.keyboard.on('keydown-M', () => Audio.toggleMute());
 
     this.scale.on('resize', () => {
       this._layoutMsg();
@@ -120,7 +123,7 @@ export class HUDScene extends Phaser.Scene {
 
   update(time) {
     if (!this.player) return;
-    this.oreText.setText(`ORE ${this.player.ore}`);
+    this.tierText.setText(`T${this.player.tier}`);
     const pct = Phaser.Math.Clamp(this.player.fuel / SHIP.fuelMax, 0, 1);
     this.fuelBar.width = 160 * pct;
     this.fuelBar.fillColor = pct < 0.25 ? 0xff6b7b : 0x7df9ff;
@@ -139,16 +142,21 @@ export class HUDScene extends Phaser.Scene {
     // mask clips anything outside the circle, so no need to clamp
     const toMap = (wx, wy) => [wx * scale + s / 2, wy * scale + s / 2];
 
-    // dots layer — meteors (dim), ore (gold), NPCs (pink)
+    // dots layer — meteors/ore/NPCs
     const g = this.minimapDots;
     g.clear();
 
-    // meteors: tiny gray specks so the field shape is readable
-    g.fillStyle(COLORS.meteor, 0.55);
+    // meteors: tiny specks for normal, brighter squares for crystals
     for (const m of this.gameScene.meteors.getChildren()) {
       if (!m.active) continue;
       const [mx, my] = toMap(m.x, m.y);
-      g.fillRect(mx - 0.5, my - 0.5, 1.5, 1.5);
+      if (m.tier === 'crystal') {
+        g.fillStyle(COLORS.crystal, 1);
+        g.fillRect(mx - 1.5, my - 1.5, 3, 3);
+      } else {
+        g.fillStyle(COLORS.meteor, 0.55);
+        g.fillRect(mx - 0.5, my - 0.5, 1.5, 1.5);
+      }
     }
 
     // ore: the thing the player actually wants to find
@@ -159,11 +167,11 @@ export class HUDScene extends Phaser.Scene {
       g.fillRect(ox - 1, oy - 1, 2, 2);
     }
 
-    // NPC ships: rivals to avoid / beat to the punch
-    g.fillStyle(COLORS.hullNpc, 1);
+    // NPC ships: each in its own hull color so players can pick them apart
     for (const ship of this.gameScene.ships) {
       if (ship === this.player || !ship.alive) continue;
       const [sx, sy] = toMap(ship.x, ship.y);
+      g.fillStyle(ship.accentColor ?? COLORS.hullNpc, 1);
       g.fillRect(sx - 1.5, sy - 1.5, 3, 3);
     }
 
@@ -245,32 +253,15 @@ export class HUDScene extends Phaser.Scene {
       row.name.setText(`${prefix} ${ship.displayName}`);
       row.value.setText(String(ship.ore));
 
-      const color = ship.isPlayer
-        ? '#7df9ff'
-        : ship.alive ? '#cfe4ff' : '#6b7490';
+      // tint each rival's leaderboard row with its own hull accent so the
+      // roster matches what you see on the map and in the field
+      let color;
+      if (ship.isPlayer) color = '#7df9ff';
+      else if (!ship.alive) color = '#6b7490';
+      else color = '#' + (ship.accentColor ?? 0xcfe4ff).toString(16).padStart(6, '0');
       row.name.setColor(color);
       row.value.setColor(color);
     }
-  }
-
-  _buildMuteButton() {
-    // small text button under the fuel bar — taps toggle audio
-    this.muteBtn = this.add.text(16, 58, this._muteLabel(), {
-      fontFamily: 'ui-monospace, monospace',
-      fontSize: '11px',
-      color: '#8ea1c7',
-      backgroundColor: '#0a0f1f',
-      padding: { left: 8, right: 8, top: 4, bottom: 4 },
-    })
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => {
-        Audio.toggleMute();
-        this.muteBtn.setText(this._muteLabel());
-      });
-  }
-
-  _muteLabel() {
-    return Audio.muted ? 'SOUND OFF' : 'SOUND ON';
   }
 
   _showMessage(text) {

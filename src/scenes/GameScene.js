@@ -1,4 +1,4 @@
-import { WORLD, SHIP, METEOR, NPC, COLORS } from '../config.js';
+import { WORLD, SHIP, METEOR, NPC, NPC_PALETTE, COLORS } from '../config.js';
 import { Ship } from '../entities/Ship.js';
 import { Meteor } from '../entities/Meteor.js';
 import { Ore } from '../entities/Ore.js';
@@ -14,7 +14,7 @@ export class GameScene extends Phaser.Scene {
     // Placeholder retro sprites generated at runtime so the project runs with
     // zero assets. Replace by dropping real PixelLab PNGs into /assets/sprites
     // and switching this to this.load.image('ship_player', 'assets/sprites/ship_player.png') etc.
-    makePlaceholderTextures(this);
+    makePlaceholderTextures(this, NPC_PALETTE);
   }
 
   create(data = {}) {
@@ -38,14 +38,26 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.collider(this.meteors, this.meteors);
     this.physics.add.overlap(this.ships, this.ores, (ship, ore) => {
       if (!ship.alive) return;
+      // brief no-pickup window after a collision so the ship doesn't instantly
+      // re-absorb the ore it just dropped
+      if (ship._noPickupUntil && this.time.now < ship._noPickupUntil) return;
       ship.addOre(ore.value);
       if (ship.isPlayer) Audio.playPickup();
       ore.destroy();
     });
     this.physics.add.collider(this.ships, this.meteors, (ship, meteor) => {
-      // graze damage: lose some fuel on hard hits
+      // hard hits cost fuel AND spill ore — higher-tier ships are bigger
+      // targets and leak more, giving trailers a natural catch-up current
       const v = Math.hypot(ship.body.velocity.x, ship.body.velocity.y);
-      if (v > SHIP.baseSpeed * 0.9) ship.fuel = Math.max(0, ship.fuel - 4);
+      if (v <= SHIP.baseSpeed * 0.9) return;
+      ship.fuel = Math.max(0, ship.fuel - 4);
+      const now = this.time.now;
+      if ((ship._noPickupUntil || 0) > now) return; // already spilled recently
+      if (ship.ore <= 0) return;
+      const dropAmt = Math.min(ship.ore, Math.max(1, Math.floor(ship.ore * 0.08) + ship.tier * 2));
+      ship.ore -= dropAmt;
+      for (let i = 0; i < dropAmt; i++) this.ores.add(new Ore(this, ship.x, ship.y, 1, null));
+      ship._noPickupUntil = now + 1200;
     });
 
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
@@ -68,7 +80,9 @@ export class GameScene extends Phaser.Scene {
     // keep everything inside the circular world boundary
     for (const ship of this.ships) this._clampToWorld(ship, SHIP.radius);
     for (const m of this.meteors.getChildren()) {
-      if (m.active) this._clampToWorld(m, m.radius || 0);
+      if (!m.active) continue;
+      m.wander();
+      this._clampToWorld(m, m.radius || 0);
     }
 
     // lasers + mining — each ship auto-fires at nearest meteor in range
@@ -113,10 +127,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   _spawnNpcs() {
+    // shuffle palette indices so color assignment isn't always the same order
+    const indices = Array.from({ length: NPC_PALETTE.length }, (_, i) => i);
+    Phaser.Utils.Array.Shuffle(indices);
     for (let i = 0; i < NPC.count; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = Phaser.Math.Between(400, WORLD.size * 0.4);
-      const npc = new Ship(this, Math.cos(a) * r, Math.sin(a) * r, { isPlayer: false });
+      const colorIndex = indices[i % indices.length];
+      const palette = NPC_PALETTE[colorIndex];
+      const npc = new Ship(this, Math.cos(a) * r, Math.sin(a) * r, {
+        isPlayer: false,
+        colorIndex,
+        accentColor: palette.accent,
+      });
       npc.setController(new NpcController(this));
       this.ships.push(npc);
     }
@@ -124,13 +147,33 @@ export class GameScene extends Phaser.Scene {
 
   _spawnMeteors(count = METEOR.count) {
     for (let i = 0; i < count; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = Phaser.Math.FloatBetween(WORLD.size * 0.08, WORLD.size * 0.48);
-      const x = Math.cos(a) * r;
-      const y = Math.sin(a) * r;
+      let x = 0, y = 0;
+      // retry until the position is outside the player's current viewport
+      // (plus a margin) so nothing visibly pops in. Unrestricted fallback
+      // after a few attempts in case the player is near the arena edge.
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = Phaser.Math.FloatBetween(WORLD.size * 0.08, WORLD.size * 0.48);
+        x = Math.cos(a) * r;
+        y = Math.sin(a) * r;
+        if (!this._isVisibleToPlayer(x, y, 180)) break;
+      }
       const radius = Phaser.Math.Between(METEOR.minR, METEOR.maxR);
-      this.meteors.add(new Meteor(this, x, y, radius));
+      const tier = this._rollTier();
+      this.meteors.add(new Meteor(this, x, y, radius, { tier }));
     }
+  }
+
+  _isVisibleToPlayer(x, y, margin = 0) {
+    const cam = this.cameras.main;
+    if (!cam) return false;
+    const halfW = cam.width / (2 * cam.zoom) + margin;
+    const halfH = cam.height / (2 * cam.zoom) + margin;
+    return Math.abs(x - cam.midPoint.x) < halfW && Math.abs(y - cam.midPoint.y) < halfH;
+  }
+
+  _rollTier() {
+    return Math.random() < METEOR.crystalChance ? 'crystal' : 'normal';
   }
 
   _shatterMeteor(meteor, miner = null) {

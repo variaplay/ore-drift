@@ -31,8 +31,11 @@ export class Ore extends Phaser.Physics.Arcade.Sprite {
     // magnetize to nearest ship in range
     let nearest = null;
     let nd2 = SHIP.magnetRadius * SHIP.magnetRadius;
+    const now = this.scene.time.now;
     for (const s of ships) {
       if (!s.alive) continue;
+      // a ship that just spilled ore can't magnet anything back for a moment
+      if (s._noPickupUntil && now < s._noPickupUntil) continue;
       const d2 = Phaser.Math.Distance.Squared(this.x, this.y, s.x, s.y);
       if (d2 < nd2) { nd2 = d2; nearest = s; }
     }

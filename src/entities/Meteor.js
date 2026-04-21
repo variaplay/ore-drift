@@ -20,6 +20,8 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     this.setVelocity(Math.cos(a) * METEOR.driftSpeed, Math.sin(a) * METEOR.driftSpeed);
     this.setBounce(1, 1);
     this.setTint(this._baseTint());
+    this._nextWanderAt = scene.time.now
+      + Phaser.Math.Between(METEOR.wanderEveryMsMin, METEOR.wanderEveryMsMax);
 
     if (tier === 'crystal') {
       // soft cyan glow pulse to telegraph high-value targets from far away
@@ -55,6 +57,24 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
   oreYield() {
     const base = Math.max(1, Math.round(this.radius * METEOR.oreYield));
     return this.tier === 'crystal' ? base * METEOR.crystalYieldMult : base;
+  }
+
+  wander() {
+    // periodic random nudge — shifts heading over time so meteors don't fly
+    // in straight lines forever. Speed is clamped to driftMax so bouncing
+    // off neighbors can't compound into a runaway.
+    const now = this.scene.time.now;
+    if (now < this._nextWanderAt) return;
+    const a = Math.random() * Math.PI * 2;
+    this.body.velocity.x += Math.cos(a) * METEOR.wanderImpulse;
+    this.body.velocity.y += Math.sin(a) * METEOR.wanderImpulse;
+    const vmag = Math.hypot(this.body.velocity.x, this.body.velocity.y);
+    if (vmag > METEOR.driftMax) {
+      this.body.velocity.x *= METEOR.driftMax / vmag;
+      this.body.velocity.y *= METEOR.driftMax / vmag;
+    }
+    this._nextWanderAt = now
+      + Phaser.Math.Between(METEOR.wanderEveryMsMin, METEOR.wanderEveryMsMax);
   }
 
   destroy(fromScene) {

@@ -17,12 +17,15 @@ export class NpcController extends Controller {
   _pickTarget(ship) {
     const meteors = this.scene.meteors.getChildren().filter(m => m.active && m.hp > 0);
     if (!meteors.length) return null;
-    // prefer nearby, slightly randomized
-    meteors.sort((a, b) => {
-      const da = Phaser.Math.Distance.Squared(ship.x, ship.y, a.x, a.y);
-      const db = Phaser.Math.Distance.Squared(ship.x, ship.y, b.x, b.y);
-      return da - db;
-    });
+    // score: closer is better (−distance), crystals are much more desirable.
+    // NPCs now compete with the player for crystal hotspots, which is what
+    // makes #1 a real strategic lever rather than just a cosmetic tier.
+    const score = (m) => {
+      const d = Math.sqrt(Phaser.Math.Distance.Squared(ship.x, ship.y, m.x, m.y));
+      const tierBonus = m.tier === 'crystal' ? 900 : 0;
+      return tierBonus - d;
+    };
+    meteors.sort((a, b) => score(b) - score(a));
     const pick = Phaser.Math.Between(0, Math.min(3, meteors.length - 1));
     return meteors[pick];
   }

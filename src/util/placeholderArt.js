@@ -7,8 +7,13 @@
 //   ore                   : 10x10
 //   spark                 : 6x6
 
-export function makePlaceholderTextures(scene) {
+export function makePlaceholderTextures(scene, npcPalette = []) {
   _shipTexture(scene, 'ship_player', 0x7df9ff, 0x2c6fff);
+  // one texture per NPC palette entry so ships render in distinct colors
+  // (tinting alone wouldn't work: the base sprite has two colors, a tint
+  // multiplies both uniformly and muddies the accent)
+  npcPalette.forEach((p, i) => _shipTexture(scene, `ship_npc_${i}`, p.accent, p.hull));
+  // fallback texture for any NPC spawned without a palette index
   _shipTexture(scene, 'ship_npc', 0xff7bd1, 0xa4357a);
   _meteorTexture(scene, 'meteor');
   _oreTexture(scene, 'ore');

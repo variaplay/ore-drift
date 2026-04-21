@@ -11,7 +11,7 @@ export const SHIP = {
   fuelMax: 100,
   fuelDrain: 1.4,
   boostDrain: 6,
-  fuelPerOre: 3.5,
+  fuelPerOre: 0.8,
   magnetRadius: 170,
   laserRange: 220,
   laserDps: 40,
@@ -23,9 +23,12 @@ export const METEOR = {
   maxR: 46,
   hpPerRadius: 1.6,
   oreYield: 0.6,
-  driftSpeed: 6,
-  crystalChance: 0.04,        // 4% of new meteors are crystals in open space
-  crystalChanceInRadiation: 0.55, // but >50% inside radiation zones
+  driftSpeed: 14,
+  driftMax: 36,               // cap so random nudges can't accumulate into rockets
+  wanderImpulse: 18,          // px/s added in a random direction per nudge
+  wanderEveryMsMin: 1400,
+  wanderEveryMsMax: 3800,
+  crystalChance: 0.04,        // 4% of new meteors are rare crystals
   crystalHpMult: 3,
   crystalYieldMult: 8,
   crystalRadiusMult: 1.1,
@@ -47,6 +50,20 @@ export const NPC = {
   retargetMs: 1500,
 };
 
+// Distinct hull colors so each rival reads individually on the map & in combat.
+// `hull` is the main body, `accent` is the cockpit/tip highlight (brighter tone).
+// Laser and thrust particles use `accent`.
+export const NPC_PALETTE = [
+  { hull: 0xa4357a, accent: 0xff7bd1 }, // magenta
+  { hull: 0xc26a2a, accent: 0xffa84d }, // orange
+  { hull: 0x6b3fb5, accent: 0xb77dff }, // purple
+  { hull: 0x2f8f5a, accent: 0x7bffa0 }, // mint
+  { hull: 0xb39a2a, accent: 0xffde5c }, // yellow
+  { hull: 0xa83340, accent: 0xff6f7b }, // red
+  { hull: 0x2f78a6, accent: 0x6ec9f0 }, // azure
+  { hull: 0x855321, accent: 0xe6a55a }, // amber
+];
+
 export const COLORS = {
   hullPlayer: 0x7df9ff,
   hullNpc: 0xff7bd1,
@@ -58,21 +75,4 @@ export const COLORS = {
   crystalHot: 0x3be0b8,
   ore: 0xffd66b,
   star: 0xffffff,
-  zoneStorm: 0xa86b3d,
-  zoneRadiation: 0xff4c6b,
-};
-
-export const ZONE = {
-  radiation: {
-    count: 3,
-    radius: { min: 320, max: 520 },
-    fuelDrainMult: 2.4,    // player fuel drain is multiplied while inside
-  },
-  storm: {
-    count: 3,
-    radius: { min: 360, max: 620 },
-    extraMeteors: 22,      // extra meteors spawned inside per zone on init
-    crystalBoost: 0.15,    // additional crystal chance inside storm zones
-  },
-  minSeparation: 300,      // don't overlap zones heavily
 };
