@@ -50,7 +50,32 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     this.laserGfx = scene.add.graphics();
     this.laserGfx.setDepth(5);
 
-    this._appliedTier = -1;
+    // accent-tinted halo drawn behind the ship; grows continuously with ore
+    // so players *feel* progress every pickup instead of only at tier jumps
+    this.haloGfx = scene.add.graphics();
+    this.haloGfx.setDepth(-0.5);
+
+    this._lastScaleApplied = -1;
+    // brief invuln on spawn so rivals can't insta-ram fresh respawns
+    this.spawnInvulnUntil = scene.time.now + 1500;
+  }
+
+  isInvulnerable() {
+    return this.scene.time.now < this.spawnInvulnUntil;
+  }
+
+  // Called when a ship is killed (by ram or future causes). Caller decides
+  // respawn; Ship just becomes inert and spills cargo.
+  die() {
+    if (!this.alive) return;
+    this.alive = false;
+    this.setVelocity(0, 0);
+    this.thrustFx.emitting = false;
+    this.laserGfx.clear();
+    this.haloGfx.clear();
+    this.setVisible(false);
+    // scatter everything the ship was carrying as free-floating ore
+    return this.ore;
   }
 
   // ore → tier: hand-tuned stops to T5, then doubles forever (no cap)
@@ -71,25 +96,44 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     return this;
   }
 
-  _applyTierVisuals() {
-    const t = this.tier;
-    if (t === this._appliedTier) return;
-    this._appliedTier = t;
-    // visual scale caps at T10 so the ship doesn't become comical at T20+,
-    // but the gameplay tier itself keeps growing
-    const vt = Math.min(t, 10);
-    const scale = 1 + vt * 0.05;
-    this.setScale(scale);
-    // resize the circular collision body to match the visible ship so
-    // higher-tier ships really are easier to hit (a key catch-up lever)
-    const r = SHIP.radius * scale;
-    const off = 16 - r;
-    this.body.setCircle(r, off, off);
+  _applyGrowthVisuals() {
+    // smooth sqrt curve; divisor=9 is ~10× the original rate so the ship
+    // visibly fattens within the first handful of pickups. Cap lifted to 2.5
+    // so late-game ships look genuinely dominating.
+    const scale = Math.min(2.5, 1 + Math.sqrt(Math.max(0, this.ore)) / 9);
+
+    // only re-sync the sprite + physics body when scale has moved enough
+    // to matter — avoids per-frame setCircle churn
+    if (Math.abs(scale - this._lastScaleApplied) > 0.005) {
+      this._lastScaleApplied = scale;
+      this.setScale(scale);
+      const r = SHIP.radius * scale;
+      const off = 16 - r;
+      this.body.setCircle(r, off, off);
+    }
+
+    // halo ring follows the ship; brightness + width + radius all grow with ore
+    this.haloGfx.clear();
+    if (!this.alive || this.ore < 3) return;
+    const g = Math.min(1, this.ore / 1500); // 0 → 1 across most of the curve
+    const ringR = SHIP.radius * scale + 4 + g * 10;
+    const ringW = 1.5 + g * 2.5;
+    const ringA = 0.18 + g * 0.45;
+    this.haloGfx.lineStyle(ringW, this.accentColor, ringA);
+    this.haloGfx.strokeCircle(this.x, this.y, ringR);
+    // faint inner glow so the ship feels "presenced" once growing
+    if (g > 0.15) {
+      this.haloGfx.fillStyle(this.accentColor, 0.08 + g * 0.1);
+      this.haloGfx.fillCircle(this.x, this.y, ringR - ringW * 0.5);
+    }
   }
 
   tick(dt) {
-    if (!this.alive || !this.controller) return;
-    this._applyTierVisuals();
+    if (!this.alive || !this.controller) {
+      this._applyGrowthVisuals();
+      return;
+    }
+    this._applyGrowthVisuals();
     const intent = this.controller.update(this, null, dt);
 
     // smooth rotate toward intent heading
@@ -134,6 +178,7 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
   destroy(fromScene) {
     this.thrustFx?.destroy();
     this.laserGfx?.destroy();
+    this.haloGfx?.destroy();
     super.destroy(fromScene);
   }
 }

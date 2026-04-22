@@ -35,13 +35,15 @@ export const METEOR = {
 };
 
 export const ORE = {
-  magnetAccel: 900,
-  maxSpeed: 280,
+  magnetAccel: 1500,
+  maxSpeed: 420,
   lifetime: 12000,
   flingSpeedMin: 30,
   flingSpeedMax: 70,
-  drag: 0.6,
+  drag: 0.4,
   biasTowardMiner: 0.6, // 0 = uniform spray, 1 = all toward miner
+  // extra pull as ore nears the ship — makes pickup feel "locked on"
+  proximityBoost: 1.8,
 };
 
 export const NPC = {

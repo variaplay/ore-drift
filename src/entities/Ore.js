@@ -28,21 +28,34 @@ export class Ore extends Phaser.Physics.Arcade.Sprite {
   }
 
   tickMagnet(ships) {
-    // magnetize to nearest ship in range
+    // each ship's magnet reach scales with its visual size (scale^1.5) so
+    // bigger ships visibly pull from further out — a real felt reward for
+    // growth. pick whichever ship we're relatively closest to inside its reach.
     let nearest = null;
-    let nd2 = SHIP.magnetRadius * SHIP.magnetRadius;
+    let nearestD = 0;
+    let nearestRange = 1;
     const now = this.scene.time.now;
     for (const s of ships) {
       if (!s.alive) continue;
-      // a ship that just spilled ore can't magnet anything back for a moment
       if (s._noPickupUntil && now < s._noPickupUntil) continue;
-      const d2 = Phaser.Math.Distance.Squared(this.x, this.y, s.x, s.y);
-      if (d2 < nd2) { nd2 = d2; nearest = s; }
+      const sc = s.scaleX || 1;
+      const range = SHIP.magnetRadius * Math.pow(sc, 1.5);
+      const d = Phaser.Math.Distance.Between(this.x, this.y, s.x, s.y);
+      if (d >= range) continue;
+      if (nearest === null || d / range < nearestD / nearestRange) {
+        nearest = s;
+        nearestD = d;
+        nearestRange = range;
+      }
     }
     if (nearest) {
       const a = Math.atan2(nearest.y - this.y, nearest.x - this.x);
-      this.body.velocity.x += Math.cos(a) * ORE.magnetAccel * (1 / 60);
-      this.body.velocity.y += Math.sin(a) * ORE.magnetAccel * (1 / 60);
+      // proximity boost: the closer the ore, the harder it's yanked — gives
+      // the pickup a satisfying "snap-to" instead of a slow drift
+      const proximity = 1 - Phaser.Math.Clamp(nearestD / nearestRange, 0, 1);
+      const accel = ORE.magnetAccel * (1 + proximity * (ORE.proximityBoost || 0));
+      this.body.velocity.x += Math.cos(a) * accel * (1 / 60);
+      this.body.velocity.y += Math.sin(a) * accel * (1 / 60);
       const vmag = Math.hypot(this.body.velocity.x, this.body.velocity.y);
       if (vmag > ORE.maxSpeed) {
         this.body.velocity.x *= ORE.maxSpeed / vmag;
