@@ -3,7 +3,7 @@
 // in GameScene.preload(): this.load.image('ship_player', 'assets/sprites/ship_player.png').
 // Target sprite sizes (matches the placeholders; good target for PixelLab):
 //   ship_player, ship_npc : 32x32  (pointing up)
-//   meteor                : 64x64
+//   meteor_0..5           : 64x64  (six irregular silhouettes)
 //   ore                   : 10x10
 //   spark                 : 6x6
 
@@ -15,10 +15,15 @@ export function makePlaceholderTextures(scene, npcPalette = []) {
   npcPalette.forEach((p, i) => _shipTexture(scene, `ship_npc_${i}`, p.accent, p.hull));
   // fallback texture for any NPC spawned without a palette index
   _shipTexture(scene, 'ship_npc', 0xff7bd1, 0xa4357a);
-  _meteorTexture(scene, 'meteor');
+  // six irregular meteor silhouettes — Meteor picks one at random so the
+  // field reads as a real asteroid belt, not a parade of identical circles
+  for (let i = 0; i < METEOR_VARIANTS; i++) _meteorTexture(scene, `meteor_${i}`);
+  _meteorTexture(scene, 'meteor'); // legacy fallback
   _oreTexture(scene, 'ore');
   _sparkTexture(scene, 'spark');
 }
+
+export const METEOR_VARIANTS = 6;
 
 function _shipTexture(scene, key, accent, hull) {
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
@@ -42,23 +47,51 @@ function _shipTexture(scene, key, accent, hull) {
 }
 
 function _meteorTexture(scene, key) {
+  // 64x64 irregular rock silhouette. Radius varies per-vertex so each
+  // variant has its own jagged profile. Drawn white — the Meteor entity
+  // tints per-instance at runtime.
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
-  // blocky rock, 64x64, roughly circular
-  const base = 0xffffff; // we tint per-meteor so draw white
-  g.fillStyle(base, 1);
-  const R = 28;
-  for (let y = -R; y <= R; y++) {
-    const w = Math.floor(Math.sqrt(R * R - y * y));
-    g.fillRect(32 - w, 32 + y, w * 2, 1);
+  const cx = 32, cy = 32;
+
+  // build an irregular polygon by sampling radii around a circle
+  const N = 18 + Math.floor(Math.random() * 5); // 18–22 vertices
+  const minR = 18, maxR = 30; // must stay inside the 32-px physics circle
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    // bias: mostly mid-range, with occasional spikes and notches
+    let r = minR + Math.random() * (maxR - minR);
+    if (Math.random() < 0.12) r = maxR;           // spike
+    else if (Math.random() < 0.1) r = minR + 1;   // notch
+    pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
   }
-  // pixel craters (slightly darker = alpha overlay)
+
+  // filled silhouette
+  g.fillStyle(0xffffff, 1);
+  g.fillPoints(pts, true);
+
+  // a soft inner "inset" ring so the shape reads rounder in the middle,
+  // keeping the crack lines from looking too pasted-on
+  g.fillStyle(0xffffff, 0.08);
+  g.fillCircle(cx, cy, 22);
+
+  // scatter three pixel craters inside the shape (darker = alpha overlay)
   g.fillStyle(0x000000, 0.22);
-  g.fillRect(20, 20, 6, 6);
-  g.fillRect(38, 30, 8, 4);
-  g.fillRect(26, 40, 4, 6);
-  // highlight
+  for (let i = 0; i < 3; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const rr = Math.random() * 12;
+    const size = 3 + Math.floor(Math.random() * 4);
+    g.fillRect(Math.round(cx + Math.cos(a) * rr - size / 2),
+               Math.round(cy + Math.sin(a) * rr - size / 2),
+               size, size);
+  }
+
+  // subtle highlight bar (off-center toward upper-left)
   g.fillStyle(0xffffff, 0.18);
-  g.fillRect(18, 16, 8, 2);
+  const hx = cx + Math.cos(Math.random() * Math.PI * 2) * 8;
+  const hy = cy + Math.sin(Math.random() * Math.PI * 2) * 8;
+  g.fillRect(Math.round(hx) - 4, Math.round(hy) - 1, 8, 2);
+
   g.generateTexture(key, 64, 64);
   g.destroy();
 }

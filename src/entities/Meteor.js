@@ -1,8 +1,14 @@
 import { METEOR, COLORS } from '../config.js';
+import { METEOR_VARIANTS } from '../util/placeholderArt.js';
 
 export class Meteor extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y, radius, { tier = 'normal' } = {}) {
-    super(scene, x, y, 'meteor');
+    // pick one of the irregular variant textures so neighbors don't look
+    // identical. Falls back to the legacy 'meteor' key if a variant doesn't
+    // exist (e.g. if preload() was customized to load real PNGs).
+    const variant = Phaser.Math.Between(0, METEOR_VARIANTS - 1);
+    const texKey = scene.textures.exists(`meteor_${variant}`) ? `meteor_${variant}` : 'meteor';
+    super(scene, x, y, texKey);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
