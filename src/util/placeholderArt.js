@@ -47,22 +47,31 @@ function _shipTexture(scene, key, accent, hull) {
 }
 
 function _meteorTexture(scene, key) {
-  // 64x64 irregular rock silhouette. Radius varies per-vertex so each
-  // variant has its own jagged profile. Drawn white — the Meteor entity
-  // tints per-instance at runtime.
+  // 64x64 smooth-irregular rock silhouette. Radius is a sum of low-frequency
+  // sine waves so the outline curves instead of jags. Each variant picks its
+  // own phase offsets so no two look alike.
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
   const cx = 32, cy = 32;
 
-  // build an irregular polygon by sampling radii around a circle
-  const N = 18 + Math.floor(Math.random() * 5); // 18–22 vertices
-  const minR = 18, maxR = 30; // must stay inside the 32-px physics circle
+  // many vertices → the polygon edges are short enough to read as a curve
+  const N = 64;
+  const baseR = 26;
+  // three sine layers: slow big lobes, mid undulation, tiny wobble
+  const aAmp = 2.2, bAmp = 1.4, cAmp = 0.7;
+  const aFreq = 2 + Math.floor(Math.random() * 2); // 2 or 3
+  const bFreq = 4 + Math.floor(Math.random() * 2); // 4 or 5
+  const cFreq = 7 + Math.floor(Math.random() * 2); // 7 or 8
+  const aPh = Math.random() * Math.PI * 2;
+  const bPh = Math.random() * Math.PI * 2;
+  const cPh = Math.random() * Math.PI * 2;
+
   const pts = [];
   for (let i = 0; i < N; i++) {
     const a = (i / N) * Math.PI * 2;
-    // bias: mostly mid-range, with occasional spikes and notches
-    let r = minR + Math.random() * (maxR - minR);
-    if (Math.random() < 0.12) r = maxR;           // spike
-    else if (Math.random() < 0.1) r = minR + 1;   // notch
+    const r = baseR
+      + Math.sin(a * aFreq + aPh) * aAmp
+      + Math.sin(a * bFreq + bPh) * bAmp
+      + Math.sin(a * cFreq + cPh) * cAmp;
     pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
   }
 
@@ -70,12 +79,7 @@ function _meteorTexture(scene, key) {
   g.fillStyle(0xffffff, 1);
   g.fillPoints(pts, true);
 
-  // a soft inner "inset" ring so the shape reads rounder in the middle,
-  // keeping the crack lines from looking too pasted-on
-  g.fillStyle(0xffffff, 0.08);
-  g.fillCircle(cx, cy, 22);
-
-  // scatter three pixel craters inside the shape (darker = alpha overlay)
+  // scatter three pixel craters inside the shape
   g.fillStyle(0x000000, 0.22);
   for (let i = 0; i < 3; i++) {
     const a = Math.random() * Math.PI * 2;
@@ -86,10 +90,11 @@ function _meteorTexture(scene, key) {
                size, size);
   }
 
-  // subtle highlight bar (off-center toward upper-left)
+  // subtle off-center highlight bar
   g.fillStyle(0xffffff, 0.18);
-  const hx = cx + Math.cos(Math.random() * Math.PI * 2) * 8;
-  const hy = cy + Math.sin(Math.random() * Math.PI * 2) * 8;
+  const hAng = Math.random() * Math.PI * 2;
+  const hx = cx + Math.cos(hAng) * 8;
+  const hy = cy + Math.sin(hAng) * 8;
   g.fillRect(Math.round(hx) - 4, Math.round(hy) - 1, 8, 2);
 
   g.generateTexture(key, 64, 64);
