@@ -28,12 +28,11 @@ export class HUDScene extends Phaser.Scene {
     this.gameScene = this.scene.get('Game');
     const style = { fontFamily: 'ui-monospace, monospace', fontSize: '14px', color: '#cfe4ff' };
 
-    // player ore count lives in the leaderboard (row "YOU"); the tier badge
-    // is the only thing we show in the top-left corner
-    this.tierText = this.add.text(16, 16, 'T0', { ...style, color: '#7df9ff', fontStyle: 'bold' });
-    this.fuelLabel = this.add.text(16, 36, 'FUEL', style);
-    this.fuelBarBg = this.add.rectangle(66, 46, 160, 10, 0x1a2340).setOrigin(0, 0.5);
-    this.fuelBar = this.add.rectangle(66, 46, 160, 10, 0x7df9ff).setOrigin(0, 0.5);
+    // player ore count lives in the leaderboard (row "YOU"); top-left is
+    // just the fuel bar now
+    this.fuelLabel = this.add.text(16, 16, 'FUEL', style);
+    this.fuelBarBg = this.add.rectangle(66, 26, 160, 10, 0x1a2340).setOrigin(0, 0.5);
+    this.fuelBar = this.add.rectangle(66, 26, 160, 10, 0x7df9ff).setOrigin(0, 0.5);
 
     this.msg = this.add.text(0, 0, '', { ...style, fontSize: '20px', color: '#ffd66b' })
       .setOrigin(0.5).setVisible(false);
@@ -62,9 +61,10 @@ export class HUDScene extends Phaser.Scene {
     this.input.on('pointerdown', () => {
       if (!this.player.alive) {
         const playerName = this.gameScene.playerName;
+        const playerDesignKey = this.gameScene.playerDesignKey;
         this.scene.stop('HUD');
         this.scene.stop('Game');
-        this.scene.start('Game', { playerName });
+        this.scene.start('Game', { playerName, playerDesignKey });
       }
     });
 
@@ -128,7 +128,6 @@ export class HUDScene extends Phaser.Scene {
 
   update(time) {
     if (!this.player) return;
-    this.tierText.setText(`T${this.player.tier}`);
     const pct = Phaser.Math.Clamp(this.player.fuel / SHIP.fuelMax, 0, 1);
     this.fuelBar.width = 160 * pct;
     this.fuelBar.fillColor = pct < 0.25 ? 0xff6b7b : 0x7df9ff;
@@ -258,11 +257,10 @@ export class HUDScene extends Phaser.Scene {
       row.name.setText(`${prefix} ${ship.displayName}`);
       row.value.setText(String(ship.ore));
 
-      // tint each rival's leaderboard row with its own hull accent so the
-      // roster matches what you see on the map and in the field
+      // tint each row with the ship's own accent so the roster matches what
+      // you see on the map; player uses their selected design's accent too
       let color;
-      if (ship.isPlayer) color = '#7df9ff';
-      else if (!ship.alive) color = '#6b7490';
+      if (!ship.alive) color = '#6b7490';
       else color = '#' + (ship.accentColor ?? 0xcfe4ff).toString(16).padStart(6, '0');
       row.name.setColor(color);
       row.value.setColor(color);

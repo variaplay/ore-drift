@@ -1,5 +1,21 @@
-import { METEOR, COLORS } from '../config.js';
+import { METEOR, MOTHER_METEOR, COLORS } from '../config.js';
 import { METEOR_VARIANTS } from '../util/placeholderArt.js';
+
+// Per-tier visual and stat parameters. Keeps the tier-specific branches
+// in the constructor readable and easy to extend.
+const TIER_PARAMS = {
+  normal:  { base: COLORS.meteor,  hot: COLORS.meteorHot,  glow: false },
+  crystal: {
+    base: COLORS.crystal, hot: COLORS.crystalHot, glow: true,
+    innerScale: 1.0, innerFreq: 50, outerScale: 1.8, outerFreq: 90,
+    haloInner: COLORS.crystalHot, crackColor: COLORS.crystalHot,
+  },
+  mother: {
+    base: COLORS.mother, hot: COLORS.motherHot, glow: true,
+    innerScale: 1.6, innerFreq: 30, outerScale: 2.6, outerFreq: 60,
+    haloInner: COLORS.motherHot, crackColor: COLORS.motherHot,
+  },
+};
 
 export class Meteor extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y, radius, { tier = 'normal' } = {}) {

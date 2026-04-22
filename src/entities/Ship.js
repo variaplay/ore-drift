@@ -5,23 +5,33 @@ import { Audio } from '../util/audio.js';
 // Steering intent comes from a Controller — the ship itself doesn't know
 // whether it's driven by a human, AI, or (later) a remote network peer.
 export class Ship extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y, { isPlayer = false, colorIndex = null, accentColor = null } = {}) {
-    // per-NPC-color texture if available; fall back to the shared ship_npc
-    const tex = isPlayer
-      ? 'ship_player'
-      : (colorIndex != null && scene.textures.exists(`ship_npc_${colorIndex}`))
-        ? `ship_npc_${colorIndex}`
-        : 'ship_npc';
+  constructor(scene, x, y, { isPlayer = false, colorIndex = null, accentColor = null, designKey = null } = {}) {
+    // Player can pick a silhouette from SHIP_DESIGNS; if none selected, fall
+    // back to the legacy ship_player texture (which is an alias for 'arrow').
+    // NPCs keep per-palette colored variants of the classic hull.
+    let tex;
+    if (isPlayer) {
+      tex = (designKey && scene.textures.exists(`ship_design_${designKey}`))
+        ? `ship_design_${designKey}`
+        : 'ship_player';
+    } else if (colorIndex != null && designKey
+               && scene.textures.exists(`ship_npc_${colorIndex}_${designKey}`)) {
+      // color-tinted variant of the chosen silhouette
+      tex = `ship_npc_${colorIndex}_${designKey}`;
+    } else if (colorIndex != null && scene.textures.exists(`ship_npc_${colorIndex}`)) {
+      tex = `ship_npc_${colorIndex}`;
+    } else {
+      tex = 'ship_npc';
+    }
     super(scene, x, y, tex);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
     this.isPlayer = isPlayer;
     this.colorIndex = colorIndex;
-    // color used for thrust particles & laser — accent if provided, else legacy default
-    this.accentColor = isPlayer
-      ? COLORS.laserPlayer
-      : (accentColor ?? COLORS.laserNpc);
+    // color used for thrust particles & laser — prefer explicit accentColor
+    // so player ships can match their selected design's signature color
+    this.accentColor = accentColor ?? (isPlayer ? COLORS.laserPlayer : COLORS.laserNpc);
     this.heading = -Math.PI / 2;
     this.fuel = SHIP.fuelMax;
     this.ore = 0;
@@ -81,7 +91,10 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
       ease: 'Cubic.easeOut',
       onComplete: () => this.setVisible(false),
     });
-    return this.ore;
+    // Drop scales with ship area (scale²) so a visibly bigger ship spills
+    // a visibly bigger cloud. Capped by actual ore so a late-game giant
+    // doesn't spawn thousands of pellets at once (perf + readability).
+    return Math.min(this.ore, Math.floor(s0 * s0 * 10));
   }
 
   _spawnDeathFx() {
@@ -156,19 +169,26 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
   }
 
   _applyGrowthVisuals() {
-    // smooth sqrt curve; divisor=9 is ~10× the original rate so the ship
-    // visibly fattens within the first handful of pickups. Cap lifted to 2.5
-    // so late-game ships look genuinely dominating.
-    const scale = Math.min(2.5, 1 + Math.sqrt(Math.max(0, this.ore)) / 18);
+    // smooth sqrt curve; divisor=18 is ~5× the original rate so the ship
+    // visibly fattens within the first handful of pickups. No cap — the
+    // curve tapers naturally (sqrt) but the ship keeps getting bigger forever.
+    const target = 1 + Math.sqrt(Math.max(0, this.ore)) / 18;
 
-    // Only setScale — Phaser Arcade recomputes the body's width/height from
-    // sourceWidth * scaleX each frame, so we DON'T recall setCircle here.
-    // (The old code passed a pre-scaled radius, which then got scaled again
-    // by updateBounds — the resulting per-frame body resize was causing the
-    // movement jitter.)
-    if (Math.abs(scale - this._lastScaleApplied) > 0.005) {
-      this._lastScaleApplied = scale;
-      this.setScale(scale);
+    // Ease toward the target instead of snapping. A per-pickup scale jump
+    // triggers setScale → Phaser re-derives body bounds mid-motion → the ship
+    // visibly hiccups. Lerping spreads each jump over ~8 frames which reads
+    // as smooth growth and removes the jitter entirely.
+    const current = this._lastScaleApplied > 0 ? this._lastScaleApplied : target;
+    const smoothed = current + (target - current) * 0.15;
+    // Skip setScale when we're within a tiny epsilon so we don't do a write
+    // every frame when sitting idle.
+    if (Math.abs(smoothed - current) > 0.0005) {
+      this._lastScaleApplied = smoothed;
+      this.setScale(smoothed);
+    } else if (this._lastScaleApplied < 0) {
+      // first-ever tick: snap to target so spawning doesn't animate in
+      this._lastScaleApplied = target;
+      this.setScale(target);
     }
   }
 
@@ -193,6 +213,11 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     this.setVelocity(Math.cos(this.heading) * speed, Math.sin(this.heading) * speed);
 
     this.fuel = Math.max(0, this.fuel - (boosting ? SHIP.boostDrain : SHIP.fuelDrain) * dt);
+    // spawn thrust particles behind the hull, not at center — followOffset is
+    // world-space, so rotate the offset with the current heading each frame
+    const rearDist = SHIP.radius * (this.scaleX || 1) + 2;
+    this.thrustFx.followOffset.x = -Math.cos(this.heading) * rearDist;
+    this.thrustFx.followOffset.y = -Math.sin(this.heading) * rearDist;
     this.thrustFx.emitting = boosting;
     this.thrustFx.frequency = boosting ? 18 : 40;
     if (this.isPlayer && boosting && !this._wasBoosting) Audio.playBoostStart();

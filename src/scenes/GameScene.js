@@ -167,9 +167,13 @@ export class GameScene extends Phaser.Scene {
       y = Math.sin(a) * r;
       if (!this._isVisibleToPlayer(x, y, 220)) break;
     }
+    // random silhouette per NPC so the field reads as a mix of rival classes,
+    // not five arrows. Color is still assigned per palette entry.
+    const design = SHIP_DESIGNS[Phaser.Math.Between(0, SHIP_DESIGNS.length - 1)];
     const npc = new Ship(this, x, y, {
       isPlayer: false,
       colorIndex,
+      designKey: design.key,
       accentColor: palette.accent,
     });
     npc.setController(new NpcController(this));

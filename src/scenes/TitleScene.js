@@ -1,11 +1,22 @@
-import { WORLD, COLORS } from '../config.js';
+import { WORLD, COLORS, NPC_PALETTE } from '../config.js';
 import { Audio } from '../util/audio.js';
+import { makePlaceholderTextures, SHIP_DESIGNS } from '../util/placeholderArt.js';
 
 const NAME_KEY = 'oredrift.playerName';
+const DESIGN_KEY = 'oredrift.shipDesign';
 const NAME_MAX = 14;
+const THUMB_SCALE = 1.7;
+const THUMB_GAP = 62;
 
 export class TitleScene extends Phaser.Scene {
   constructor() { super('Title'); }
+
+  preload() {
+    // TitleScene renders ship thumbnails, so it needs the design textures
+    // available before create() builds the picker. GameScene will regenerate
+    // these on its own preload, which is idempotent.
+    makePlaceholderTextures(this, NPC_PALETTE);
+  }
 
   create() {
     const cam = this.cameras.main;
@@ -24,6 +35,30 @@ export class TitleScene extends Phaser.Scene {
       fontFamily: 'ui-monospace, monospace',
       fontSize: '16px',
       color: '#ffd66b',
+    }).setOrigin(0.5);
+
+    this.shipPrompt = this.add.text(0, 0, 'SHIP TYPE', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '12px',
+      color: '#8ea1c7',
+      letterSpacing: 2,
+    }).setOrigin(0.5);
+
+    this.selectedDesignKey = this._loadDesign();
+    this.selectRing = this.add.graphics().setDepth(1);
+    // thumbnails: one Image per design, clickable, shows ring when selected
+    this.thumbs = SHIP_DESIGNS.map((d) => {
+      const img = this.add.image(0, 0, `ship_design_${d.key}`)
+        .setScale(THUMB_SCALE)
+        .setInteractive({ useHandCursor: true });
+      img.on('pointerdown', () => this._selectDesign(d.key));
+      return { img, design: d };
+    });
+    this.shipName = this.add.text(0, 0, '', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '13px',
+      color: '#cfe4ff',
+      fontStyle: 'bold',
     }).setOrigin(0.5);
 
     this.prompt = this.add.text(0, 0, 'SHIP NAME', {
@@ -76,6 +111,44 @@ export class TitleScene extends Phaser.Scene {
 
     this.scale.on('resize', () => this._layout());
     this._layout();
+    this._refreshSelection();
+  }
+
+  _selectDesign(key) {
+    this.selectedDesignKey = key;
+    try { localStorage.setItem(DESIGN_KEY, key); } catch {}
+    this._refreshSelection();
+    Audio.attachToPhaser(this);
+    Audio.unlock();
+    Audio.playUiClick();
+  }
+
+  _refreshSelection() {
+    const selected = this.thumbs.find((t) => t.design.key === this.selectedDesignKey) || this.thumbs[0];
+    if (!selected) return;
+    const ringColor = selected.design.accent;
+    const r = 28;
+    this.selectRing.clear();
+    // soft outer glow + crisp inner ring pins the picked ship
+    this.selectRing.lineStyle(2, ringColor, 0.9);
+    this.selectRing.strokeCircle(selected.img.x, selected.img.y, r);
+    this.selectRing.lineStyle(8, ringColor, 0.18);
+    this.selectRing.strokeCircle(selected.img.x, selected.img.y, r);
+    // dim non-selected thumbs so the pick pops
+    for (const t of this.thumbs) {
+      t.img.setAlpha(t.design.key === this.selectedDesignKey ? 1 : 0.55);
+    }
+    // show the name of the currently picked ship
+    this.shipName.setText(selected.design.name);
+    this.shipName.setColor('#' + ringColor.toString(16).padStart(6, '0'));
+  }
+
+  _loadDesign() {
+    try {
+      const k = localStorage.getItem(DESIGN_KEY);
+      if (SHIP_DESIGNS.some((d) => d.key === k)) return k;
+    } catch {}
+    return SHIP_DESIGNS[0].key;
   }
 
   _launch(rawName) {
@@ -85,7 +158,10 @@ export class TitleScene extends Phaser.Scene {
     Audio.unlock();
     Audio.playLaunch();
     Audio.startMusic();
-    this.scene.start('Game', { playerName: name });
+    this.scene.start('Game', {
+      playerName: name,
+      playerDesignKey: this.selectedDesignKey,
+    });
   }
 
   _loadName() {
@@ -106,10 +182,24 @@ export class TitleScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const cx = cam.width / 2;
     const cy = cam.height / 2;
-    this.title.setPosition(cx, cy - 140);
-    this.subtitle.setPosition(cx, cy - 90);
-    this.prompt.setPosition(cx, cy - 30);
-    this.form.setPosition(cx, cy + 40);
+    this.title.setPosition(cx, cy - 200);
+    this.subtitle.setPosition(cx, cy - 155);
+
+    // ship picker row — centered, spaced by THUMB_GAP
+    this.shipPrompt.setPosition(cx, cy - 110);
+    const n = this.thumbs.length;
+    const rowW = (n - 1) * THUMB_GAP;
+    const startX = cx - rowW / 2;
+    const thumbY = cy - 65;
+    this.thumbs.forEach((t, i) => t.img.setPosition(startX + i * THUMB_GAP, thumbY));
+    this.shipName.setPosition(cx, thumbY + 34);
+
+    // name prompt + DOM form below the picker
+    this.prompt.setPosition(cx, cy + 10);
+    this.form.setPosition(cx, cy + 80);
+
+    // redraw selection ring at the new position
+    if (this.thumbs.length) this._refreshSelection();
   }
 
   _drawStarfield() {

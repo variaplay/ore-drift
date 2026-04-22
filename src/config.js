@@ -36,6 +36,23 @@ export const METEOR = {
   crystalRadiusMult: 1.1,
 };
 
+// Large "mother" meteor event — spawns periodically, drifts in from the
+// edge, shatters into a cluster of fragments. Gives runs a rhythm instead
+// of flat farming.
+export const MOTHER_METEOR = {
+  radius: 90,
+  hpMult: 0.6,                // on top of area*hpPerArea; ~11s to break solo
+  yieldMult: 2.5,             // generous direct drop in addition to fragments
+  fragmentCount: 10,
+  fragmentRadiusMin: 28,
+  fragmentRadiusMax: 38,
+  fragmentOutwardSpeed: 50,
+  firstSpawnMs: 18000,
+  spawnIntervalMsMin: 45000,
+  spawnIntervalMsMax: 90000,
+  edgeDistanceFrac: 0.42,     // how far from center to spawn (0.5 = at rim)
+};
+
 export const ORE = {
   magnetAccel: 1500,
   maxSpeed: 420,
@@ -79,6 +96,10 @@ export const COLORS = {
   // crystals rather than candy, and stay distinct from the cyan player laser.
   crystal: 0xc99eff,
   crystalHot: 0x6e2ec8,
+  // Mother meteor: warm molten amber so it reads as a "burning alien rock"
+  // at a glance against the starfield and the violet crystals.
+  mother: 0xff9248,
+  motherHot: 0xd44214,
   ore: 0xffd66b,
   star: 0xffffff,
 };
