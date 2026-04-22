@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About — Ore Drift</title>
+    <meta name="description" content="About Ore Drift, a free browser-based space mining game by Variaplay LLP.">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #05060c; color: rgba(255,255,255,0.85);
+            line-height: 1.7; padding: 40px 20px;
+        }
+        .container { max-width: 640px; margin: 0 auto; }
+        h1 { font-size: 1.8rem; margin-bottom: 8px; color: #7df9ff; }
+        .updated { font-size: 0.85rem; color: rgba(255,255,255,0.4); margin-bottom: 32px; }
+        h2 { font-size: 1.15rem; margin: 28px 0 8px; color: rgba(255,255,255,0.95); }
+        p, li { font-size: 0.95rem; margin-bottom: 12px; }
+        ul { padding-left: 20px; }
+        a { color: #7df9ff; }
+        .back { display: inline-block; margin-bottom: 24px; font-size: 0.9rem; color: rgba(255,255,255,0.5); text-decoration: none; }
+        .back:hover { color: rgba(255,255,255,0.8); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back">&larr; Back to game</a>
+        <h1>About Ore Drift</h1>
+        <p class="updated">Last updated: April 2026</p>
+
+        <p>Ore Drift is a free, browser-based space mining game. Glide your ship through a field of asteroids, auto-mine ore as you pass, avoid rivals who are chasing the same rocks, and don't run out of fuel. Runs on desktop and mobile — one finger or the mouse is all you need.</p>
+
+        <h2>What you can do</h2>
+        <ul>
+            <li><strong>Drag to steer, hold to boost:</strong> the entire control scheme. Works identically on mouse and touch.</li>
+            <li><strong>Auto-mine:</strong> your laser locks onto the nearest meteor on its own. No aiming.</li>
+            <li><strong>Hunt crystal meteors:</strong> rare cyan rocks that pay out ~8× the ore of a normal meteor. Visible from across the field.</li>
+            <li><strong>Ram rivals:</strong> slither-style — nose-first contact with another ship's body is fatal to whoever charged in. Time your boosts.</li>
+            <li><strong>Grow your ship:</strong> the more ore you bank, the bigger your ship gets. A bigger ship is more intimidating — and a bigger target.</li>
+        </ul>
+
+        <h2>Who runs it</h2>
+        <p>Ore Drift is made and operated by <strong>Variaplay LLP</strong>, an independent games studio. We build small, polished browser games and publish them under the <a href="https://www.variaplay.com">Variaplay.com</a> brand.</p>
+        <p>The game is free. There are no accounts, no ads, no analytics, no in-app purchases, and nothing about your play is sent to us. See our <a href="privacy.html">Privacy Policy</a> for the short details.</p>
+
+        <h2>How it's built</h2>
+        <p>Ore Drift runs on <a href="https://phaser.io" target="_blank" rel="noopener">Phaser 3</a>, a 2D HTML5 game engine, loaded from a CDN. All art and sound is generated procedurally at runtime — there are no image or audio asset files. The music is a short ambient piece in A minor, synthesized live by the Web Audio API.</p>
+        <p>Ships are 32×32 retro pixel sprites with per-player color palettes. Meteor silhouettes are smooth sum-of-sine polygons, and their surface cracks grow procedurally as your laser drills through them. NPC rivals share the exact same Ship code as the player — they just steer via an AI controller instead of your finger, which keeps the codebase ready for networked multiplayer down the road.</p>
+
+        <h2>Contact</h2>
+        <p>Questions, bug reports, feedback, or business inquiries? Email <a href="mailto:support@variaplay.com">support@variaplay.com</a>.</p>
+
+        <h2>Legal</h2>
+        <ul>
+            <li><a href="privacy.html">Privacy Policy</a></li>
+            <li><a href="terms.html">Terms of Use</a></li>
+        </ul>
+    </div>
+</body>
+</html>
