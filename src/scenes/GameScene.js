@@ -97,6 +97,13 @@ export class GameScene extends Phaser.Scene {
       ship.drawLaser(target);
       if (target) {
         const dead = target.damage(SHIP.laserDps * dt);
+        // visible impact flash at the meteor edge facing the shooting ship,
+        // throttled so it reads as punctuated "chunks flying" not a lightshow
+        ship._lastImpactFxAt = ship._lastImpactFxAt || 0;
+        if (_time - ship._lastImpactFxAt > 80) {
+          ship._lastImpactFxAt = _time;
+          this._spawnLaserImpactFx(target, ship);
+        }
         // player-only laser crackle, rate-limited so it doesn't become a drone
         if (ship.isPlayer) {
           this._lastLaserTick = this._lastLaserTick || 0;
@@ -162,6 +169,56 @@ export class GameScene extends Phaser.Scene {
     npc.setController(new NpcController(this));
     this.ships.push(npc);
     return npc;
+  }
+
+  _spawnLaserImpactFx(meteor, ship) {
+    // contact point: the meteor's edge facing the shooting ship
+    const ang = Math.atan2(ship.y - meteor.y, ship.x - meteor.x);
+    const ix = meteor.x + Math.cos(ang) * meteor.radius;
+    const iy = meteor.y + Math.sin(ang) * meteor.radius;
+    const color = ship.accentColor;
+
+    // expanding ring flash — quick, small, additive
+    const flash = this.add.graphics();
+    flash.setDepth(6);
+    flash.setBlendMode(Phaser.BlendModes.ADD);
+    const state = { r: 3, a: 0.9, w: 2.5 };
+    this.tweens.add({
+      targets: state,
+      r: 14,
+      a: 0,
+      w: 0.5,
+      duration: 220,
+      ease: 'Cubic.easeOut',
+      onUpdate: () => {
+        flash.clear();
+        flash.fillStyle(color, state.a * 0.35);
+        flash.fillCircle(ix, iy, state.r);
+        flash.lineStyle(state.w, color, state.a);
+        flash.strokeCircle(ix, iy, state.r);
+      },
+      onComplete: () => flash.destroy(),
+    });
+
+    // spark tendrils — two short accent-colored streaks in random directions
+    for (let i = 0; i < 2; i++) {
+      const t = this.add.graphics();
+      t.setDepth(6);
+      t.setBlendMode(Phaser.BlendModes.ADD);
+      const a = ang + Math.PI + (Math.random() - 0.5) * 1.2;
+      const len = 14 + Math.random() * 14;
+      const dx = Math.cos(a) * len;
+      const dy = Math.sin(a) * len;
+      t.lineStyle(2, color, 1);
+      t.lineBetween(ix, iy, ix + dx, iy + dy);
+      this.tweens.add({
+        targets: t,
+        alpha: 0,
+        duration: 180,
+        ease: 'Quad.easeOut',
+        onComplete: () => t.destroy(),
+      });
+    }
   }
 
   _resolveShipRams() {
@@ -249,9 +306,16 @@ export class GameScene extends Phaser.Scene {
       // retry until the position is outside the player's current viewport
       // (plus a margin) so nothing visibly pops in. Unrestricted fallback
       // after a few attempts in case the player is near the arena edge.
+      // Power-biased radial sampling: u^2 concentrates spawns near center,
+      // tapering off toward the edge. A plain uniform `r` already gives
+      // 1/r areal density (center-heavy) but the player wanted the contrast
+      // sharper, so squaring the sample makes the edge visibly sparse.
+      const rMin = WORLD.size * 0.04;
+      const rMax = WORLD.size * 0.49;
       for (let attempt = 0; attempt < 12; attempt++) {
         const a = Math.random() * Math.PI * 2;
-        const r = Phaser.Math.FloatBetween(WORLD.size * 0.08, WORLD.size * 0.48);
+        const u = Math.random();
+        const r = rMin + (rMax - rMin) * (u * u);
         x = Math.cos(a) * r;
         y = Math.sin(a) * r;
         if (!this._isVisibleToPlayer(x, y, 180)) break;

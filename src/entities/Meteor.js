@@ -28,21 +28,17 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     this._nextWanderAt = scene.time.now
       + Phaser.Math.Between(METEOR.wanderEveryMsMin, METEOR.wanderEveryMsMax);
 
-    // Precompute the yield count once so the label text and the shatter
-    // payout always agree.
+    // Precompute the yield count once so shatter payouts are stable.
     this._cachedYield = this._computeYield();
 
-    // yield label — small number drawn on the meteor so players can eyeball
-    // how much ore a rock is worth before committing to mine it
-    const labelColor = tier === 'crystal' ? '#9bffe5' : '#e8c46a';
-    this.yieldLabel = scene.add.text(x, y, String(this._cachedYield), {
-      fontFamily: 'ui-monospace, monospace',
-      fontSize: '12px',
-      fontStyle: 'bold',
-      color: labelColor,
-      stroke: '#05060c',
-      strokeThickness: 3,
-    }).setOrigin(0.5, 0.5).setDepth(4);
+    // Cracks overlay — procedural jagged lines appear as damage crosses
+    // thresholds. Stored in the meteor's local frame so they rotate with
+    // the rock and look like they're actually on its surface.
+    this._cracks = scene.add.graphics();
+    this._cracks.setDepth(0.5);
+    this._crackLines = [];
+    this._crackThresholds = [0.12, 0.28, 0.45, 0.62, 0.78, 0.9];
+    this._nextCrackIdx = 0;
 
     if (tier === 'crystal') {
       // denser inner + wispier outer emitter reads as a real glow instead of
@@ -82,6 +78,14 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     this.hp -= amount;
     const t = 1 - Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
 
+    // Grow the crack network as damage passes each threshold. Each crossing
+    // adds one new jagged line so players can *see* the rock weakening.
+    while (this._nextCrackIdx < this._crackThresholds.length
+           && t >= this._crackThresholds[this._nextCrackIdx]) {
+      this._addCrack();
+      this._nextCrackIdx++;
+    }
+
     // Manual RGB lerp. Phaser's Color.Interpolate.ColorWithColor has leaked
     // NaN through GetColor in some edge cases (maxHp=0, Clamp(NaN)) and
     // silently produced black tints — that's the "meteor turns black" bug.
@@ -95,6 +99,27 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     this.setTint((r << 16) | (g << 8) | b);
 
     return this.hp <= 0;
+  }
+
+  _addCrack() {
+    // jagged polyline from an inner point out through the surface, stored
+    // in local meteor coords (to be rotated with the sprite at draw time)
+    const angle = Math.random() * Math.PI * 2;
+    const length = this.radius * (0.55 + Math.random() * 0.55);
+    const steps = 4 + Math.floor(Math.random() * 3);
+    const stepLen = length / steps;
+    const jitter = this.radius * 0.16;
+    const points = [];
+    const startR = this.radius * 0.1;
+    let x = Math.cos(angle) * startR;
+    let y = Math.sin(angle) * startR;
+    points.push({ x, y });
+    for (let i = 0; i < steps; i++) {
+      x += Math.cos(angle) * stepLen + (Math.random() - 0.5) * jitter;
+      y += Math.sin(angle) * stepLen + (Math.random() - 0.5) * jitter;
+      points.push({ x, y });
+    }
+    this._crackLines.push(points);
   }
 
   _computeYield() {
@@ -120,12 +145,7 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
   }
 
   updateVisuals(time) {
-    // keep the yield label pinned to the meteor, hide it once the rock is
-    // visibly beaten-up (no point advertising yield once it's about to pop)
-    if (this.yieldLabel) {
-      this.yieldLabel.setPosition(this.x, this.y);
-      this.yieldLabel.setAlpha(Phaser.Math.Clamp(this.hp / this.maxHp, 0.15, 1));
-    }
+    this._drawCracks();
 
     if (this.tier !== 'crystal' || !this.halo) return;
     // pulsing halo: breathes on a ~1400ms cycle, always visible, so crystals
@@ -144,12 +164,33 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     this.halo.fillCircle(this.x, this.y, rBase - 2);
   }
 
+  _drawCracks() {
+    this._cracks.clear();
+    if (!this._crackLines.length) return;
+    const cos = Math.cos(this.rotation);
+    const sin = Math.sin(this.rotation);
+    // crystals use a bright teal for cracks, normal meteors use near-black
+    const color = this.tier === 'crystal' ? COLORS.crystalHot : 0x0c1018;
+    this._cracks.lineStyle(1.2, color, 0.9);
+    for (const pts of this._crackLines) {
+      this._cracks.beginPath();
+      for (let i = 0; i < pts.length; i++) {
+        const lx = pts[i].x, ly = pts[i].y;
+        const wx = this.x + lx * cos - ly * sin;
+        const wy = this.y + lx * sin + ly * cos;
+        if (i === 0) this._cracks.moveTo(wx, wy);
+        else this._cracks.lineTo(wx, wy);
+      }
+      this._cracks.strokePath();
+    }
+  }
+
   destroy(fromScene) {
     this.glowFx?.destroy();
     this.glowInner?.destroy();
     this.glowOuter?.destroy();
     this.halo?.destroy();
-    this.yieldLabel?.destroy();
+    this._cracks?.destroy();
     super.destroy(fromScene);
   }
 }
