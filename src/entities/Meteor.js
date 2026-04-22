@@ -108,22 +108,34 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
   }
 
   _addCrack() {
-    // jagged polyline from an inner point out through the surface, stored
-    // in local meteor coords (to be rotated with the sprite at draw time)
+    // jagged polyline from an inner point out to the rock's edge, stored
+    // in local meteor coords (rotated with the sprite at draw time).
+    //
+    // The meteor silhouette varies between ~0.69× and ~0.94× of `this.radius`
+    // (sum-of-sines in placeholderArt.js). We target 0.85× as the end-point,
+    // which sits comfortably inside the silhouette at every angle — so cracks
+    // reach the visible edge but don't poke into the halo/glow beyond it.
     const angle = Math.random() * Math.PI * 2;
-    const length = this.radius * (0.55 + Math.random() * 0.55);
-    const steps = 4 + Math.floor(Math.random() * 3);
-    const stepLen = length / steps;
-    const jitter = this.radius * 0.16;
-    const points = [];
+    const maxExtent = this.radius * 0.85;
     const startR = this.radius * 0.1;
-    let x = Math.cos(angle) * startR;
-    let y = Math.sin(angle) * startR;
-    points.push({ x, y });
-    for (let i = 0; i < steps; i++) {
-      x += Math.cos(angle) * stepLen + (Math.random() - 0.5) * jitter;
-      y += Math.sin(angle) * stepLen + (Math.random() - 0.5) * jitter;
-      points.push({ x, y });
+    const steps = 4 + Math.floor(Math.random() * 3);
+    const jitter = this.radius * 0.08;
+    const points = [];
+    // first point: inner
+    points.push({ x: Math.cos(angle) * startR, y: Math.sin(angle) * startR });
+    // intermediate + end points along the ray, with small sideways jitter
+    for (let i = 1; i <= steps; i++) {
+      const frac = i / steps;
+      const r = startR + (maxExtent - startR) * frac;
+      // tangent direction for sideways jitter
+      const jx = -Math.sin(angle) * (Math.random() - 0.5) * jitter * 2;
+      const jy =  Math.cos(angle) * (Math.random() - 0.5) * jitter * 2;
+      let px = Math.cos(angle) * r + jx;
+      let py = Math.sin(angle) * r + jy;
+      // extra safety: clamp any point whose jitter pushed it past maxExtent
+      const d = Math.hypot(px, py);
+      if (d > maxExtent) { px *= maxExtent / d; py *= maxExtent / d; }
+      points.push({ x: px, y: py });
     }
     this._crackLines.push(points);
   }
