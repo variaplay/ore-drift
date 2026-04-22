@@ -4,7 +4,7 @@ import { Meteor } from '../entities/Meteor.js';
 import { Ore } from '../entities/Ore.js';
 import { LocalInputController } from '../controllers/LocalInputController.js';
 import { NpcController } from '../controllers/NpcController.js';
-import { makePlaceholderTextures } from '../util/placeholderArt.js';
+import { makePlaceholderTextures, SHIP_DESIGNS } from '../util/placeholderArt.js';
 import { Audio } from '../util/audio.js';
 
 export class GameScene extends Phaser.Scene {
@@ -19,6 +19,7 @@ export class GameScene extends Phaser.Scene {
 
   create(data = {}) {
     this.playerName = data.playerName || this.playerName || 'PILOT';
+    this.playerDesignKey = data.playerDesignKey || this.playerDesignKey || SHIP_DESIGNS[0].key;
     Audio.attachToPhaser(this);
     this.physics.world.setBounds(-WORLD.size / 2, -WORLD.size / 2, WORLD.size, WORLD.size);
     this.cameras.main.setBackgroundColor('#05060c');
@@ -134,7 +135,12 @@ export class GameScene extends Phaser.Scene {
   // ---------- spawns ----------
 
   _spawnPlayer() {
-    this.player = new Ship(this, 0, 0, { isPlayer: true });
+    const design = SHIP_DESIGNS.find((d) => d.key === this.playerDesignKey) || SHIP_DESIGNS[0];
+    this.player = new Ship(this, 0, 0, {
+      isPlayer: true,
+      designKey: design.key,
+      accentColor: design.accent,
+    });
     this.player.displayName = this.playerName;
     this.player.setController(new LocalInputController(this));
     this.ships.push(this.player);
@@ -239,9 +245,15 @@ export class GameScene extends Phaser.Scene {
         const rSum = (ra + rb) * 1.05;
         if (dx * dx + dy * dy > rSum * rSum) continue;
 
-        // decide who rammed: "any forward-half-plane contact is a head-ram".
-        // dot > 0 means the other ship is in the ship's forward hemisphere,
-        // i.e. the collision happened on this ship's nose side (not butt).
+        // Head-rams only. aDot/bDot is cos(angle between ship's facing and
+        // contact normal), i.e. *where on this ship's hull the contact is*:
+        //   1.0 → straight on the nose
+        //   0.0 → a side-graze at 90°
+        //  −1.0 → on the back of the hull (rammed from behind)
+        // A ship only dies if contact is within its forward "head" cone —
+        // otherwise the player would die just for clipping someone tangentially.
+        // cos(53°) ≈ 0.6 → ~106° head cone, which matches the nose area of
+        // the sprite visually. Sidewipes and rear collisions pass through.
         const len = Math.sqrt(dx * dx + dy * dy) || 1;
         const ux = dx / len, uy = dy / len;
         const aFx = Math.cos(a.heading), aFy = Math.sin(a.heading);
@@ -249,19 +261,11 @@ export class GameScene extends Phaser.Scene {
 
         const aDot = aFx * ux + aFy * uy;       // A's facing vs A→B
         const bDot = bFx * -ux + bFy * -uy;     // B's facing vs B→A
-        const aRams = aDot > 0;
-        const bRams = bDot > 0;
-
-        // tie-breaker for rare tangential cases: if neither is clearly a
-        // head-ram, the one with a *higher* dot still dies — otherwise the
-        // pair would clip with no consequence.
-        if (!aRams && !bRams) {
-          if (aDot >= bDot) this._killShip(a);
-          else this._killShip(b);
-        } else {
-          if (aRams) this._killShip(a);
-          if (bRams) this._killShip(b);
-        }
+        const HEAD = 0.6;
+        if (aDot > HEAD) this._killShip(a);
+        if (bDot > HEAD) this._killShip(b);
+        // No tangential tie-breaker — if both ships' noses are pointed away
+        // from the contact, the collision is a side-brush and nobody dies.
         if (!a.alive) break;
       }
     }
