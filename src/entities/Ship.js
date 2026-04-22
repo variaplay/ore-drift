@@ -50,11 +50,6 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     this.laserGfx = scene.add.graphics();
     this.laserGfx.setDepth(5);
 
-    // accent-tinted halo drawn behind the ship; grows continuously with ore
-    // so players *feel* progress every pickup instead of only at tier jumps
-    this.haloGfx = scene.add.graphics();
-    this.haloGfx.setDepth(-0.5);
-
     this._lastScaleApplied = -1;
     // brief invuln on spawn so rivals can't insta-ram fresh respawns
     this.spawnInvulnUntil = scene.time.now + 1500;
@@ -72,7 +67,6 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     this.setVelocity(0, 0);
     this.thrustFx.emitting = false;
     this.laserGfx.clear();
-    this.haloGfx.clear();
     this.setVisible(false);
     // scatter everything the ship was carrying as free-floating ore
     return this.ore;
@@ -100,7 +94,7 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     // smooth sqrt curve; divisor=9 is ~10× the original rate so the ship
     // visibly fattens within the first handful of pickups. Cap lifted to 2.5
     // so late-game ships look genuinely dominating.
-    const scale = Math.min(2.5, 1 + Math.sqrt(Math.max(0, this.ore)) / 9);
+    const scale = Math.min(2.5, 1 + Math.sqrt(Math.max(0, this.ore)) / 18);
 
     // Only setScale — Phaser Arcade recomputes the body's width/height from
     // sourceWidth * scaleX each frame, so we DON'T recall setCircle here.
@@ -110,21 +104,6 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     if (Math.abs(scale - this._lastScaleApplied) > 0.005) {
       this._lastScaleApplied = scale;
       this.setScale(scale);
-    }
-
-    // halo ring follows the ship; brightness + width + radius all grow with ore
-    this.haloGfx.clear();
-    if (!this.alive || this.ore < 3) return;
-    const g = Math.min(1, this.ore / 1500); // 0 → 1 across most of the curve
-    const ringR = SHIP.radius * scale + 4 + g * 10;
-    const ringW = 1.5 + g * 2.5;
-    const ringA = 0.18 + g * 0.45;
-    this.haloGfx.lineStyle(ringW, this.accentColor, ringA);
-    this.haloGfx.strokeCircle(this.x, this.y, ringR);
-    // faint inner glow so the ship feels "presenced" once growing
-    if (g > 0.15) {
-      this.haloGfx.fillStyle(this.accentColor, 0.08 + g * 0.1);
-      this.haloGfx.fillCircle(this.x, this.y, ringR - ringW * 0.5);
     }
   }
 
@@ -178,7 +157,6 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
   destroy(fromScene) {
     this.thrustFx?.destroy();
     this.laserGfx?.destroy();
-    this.haloGfx?.destroy();
     super.destroy(fromScene);
   }
 }
