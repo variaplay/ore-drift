@@ -11,7 +11,7 @@ export const SHIP = {
   fuelMax: 100,
   fuelDrain: 1.4,
   boostDrain: 6,
-  fuelPerOre: 0.8,
+  fuelPerOre: 1.6,
   magnetRadius: 170,
   laserRange: 220,
   laserDps: 40,
@@ -24,7 +24,7 @@ export const METEOR = {
   // Area-based scaling so a meteor twice as wide is 4× as much work AND
   // 4× the payoff. Feels intuitive: big rocks look like big rocks.
   hpPerArea: 0.09,
-  oreYield: 0.015,
+  oreYield: 0.0075,
   driftSpeed: 14,
   driftMax: 36,               // cap so random nudges can't accumulate into rockets
   wanderImpulse: 18,          // px/s added in a random direction per nudge
