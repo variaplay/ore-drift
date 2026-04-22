@@ -21,8 +21,10 @@ export const METEOR = {
   count: 70,
   minR: 18,
   maxR: 46,
-  hpPerRadius: 1.6,
-  oreYield: 0.6,
+  // Area-based scaling so a meteor twice as wide is 4× as much work AND
+  // 4× the payoff. Feels intuitive: big rocks look like big rocks.
+  hpPerArea: 0.09,
+  oreYield: 0.015,
   driftSpeed: 14,
   driftMax: 36,               // cap so random nudges can't accumulate into rockets
   wanderImpulse: 18,          // px/s added in a random direction per nudge

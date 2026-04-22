@@ -85,6 +85,7 @@ export class GameScene extends Phaser.Scene {
     for (const m of this.meteors.getChildren()) {
       if (!m.active) continue;
       m.wander();
+      m.updateVisuals?.(_time);
       this._clampToWorld(m, m.radius || 0);
     }
 
