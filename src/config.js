@@ -61,7 +61,7 @@ export const NPC_PALETTE = [
   { hull: 0xa4357a, accent: 0xff7bd1 }, // magenta
   { hull: 0xc26a2a, accent: 0xffa84d }, // orange
   { hull: 0x6b3fb5, accent: 0xb77dff }, // purple
-  { hull: 0x2f8f5a, accent: 0x7bffa0 }, // mint
+  { hull: 0x994355, accent: 0xef9aa4 }, // coral (replaces mint — space-appropriate warm)
   { hull: 0xb39a2a, accent: 0xffde5c }, // yellow
   { hull: 0xa83340, accent: 0xff6f7b }, // red
   { hull: 0x2f78a6, accent: 0x6ec9f0 }, // azure
@@ -75,8 +75,10 @@ export const COLORS = {
   laserNpc: 0xff9ad4,
   meteor: 0x6b7ea8,
   meteorHot: 0xd98a3d,
-  crystal: 0x9bffe5,
-  crystalHot: 0x3be0b8,
+  // Crystals were mint-teal; shifted to violet so they read as rare space
+  // crystals rather than candy, and stay distinct from the cyan player laser.
+  crystal: 0xc99eff,
+  crystalHot: 0x6e2ec8,
   ore: 0xffd66b,
   star: 0xffffff,
 };

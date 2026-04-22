@@ -8,13 +8,22 @@
 //   spark                 : 6x6
 
 export function makePlaceholderTextures(scene, npcPalette = []) {
-  _shipTexture(scene, 'ship_player', 0x7df9ff, 0x2c6fff);
-  // one texture per NPC palette entry so ships render in distinct colors
-  // (tinting alone wouldn't work: the base sprite has two colors, a tint
-  // multiplies both uniformly and muddies the accent)
-  npcPalette.forEach((p, i) => _shipTexture(scene, `ship_npc_${i}`, p.accent, p.hull));
+  // player-selectable ship variants (shape + signature colors)
+  SHIP_DESIGNS.forEach((d) => _renderDesignTexture(scene, d));
+  // legacy player texture key (now an alias for the default design)
+  _renderDesignTexture(scene, SHIP_DESIGNS[0], 'ship_player');
+  // one texture per (palette color × ship design) so NPCs can vary both
+  // silhouette AND hull color. Tinting alone won't work — the base sprite
+  // has two colors and a tint multiplies both, muddying the accent.
+  npcPalette.forEach((p, i) => {
+    // legacy per-color arrow (kept for any spawn path that doesn't pick a design)
+    _drawToTexture(scene, `ship_npc_${i}`, (g) => _drawArrow(g, p.accent, p.hull));
+    SHIP_DESIGNS.forEach((d) => {
+      _drawToTexture(scene, `ship_npc_${i}_${d.key}`, (g) => d.draw(g, p.accent, p.hull));
+    });
+  });
   // fallback texture for any NPC spawned without a palette index
-  _shipTexture(scene, 'ship_npc', 0xff7bd1, 0xa4357a);
+  _drawToTexture(scene, 'ship_npc', (g) => _drawArrow(g, 0xff7bd1, 0xa4357a));
   // six irregular meteor silhouettes — Meteor picks one at random so the
   // field reads as a real asteroid belt, not a parade of identical circles
   for (let i = 0; i < METEOR_VARIANTS; i++) _meteorTexture(scene, `meteor_${i}`);
@@ -25,25 +34,102 @@ export function makePlaceholderTextures(scene, npcPalette = []) {
 
 export const METEOR_VARIANTS = 6;
 
-function _shipTexture(scene, key, accent, hull) {
+// Player ship variants — each has a distinct silhouette and signature colors.
+// Added purely additively so existing ship_player calls still work via the
+// legacy alias generated above.
+export const SHIP_DESIGNS = [
+  { key: 'arrow',  name: 'ARROW',  accent: 0x7df9ff, hull: 0x2c6fff, draw: _drawArrow },
+  { key: 'wing',   name: 'WING',   accent: 0xff7bd1, hull: 0xa4357a, draw: _drawWing },
+  { key: 'dart',   name: 'DART',   accent: 0x8abde3, hull: 0x3d5a7a, draw: _drawDart },
+  { key: 'saucer', name: 'SAUCER', accent: 0xffde5c, hull: 0xb39a2a, draw: _drawSaucer },
+  { key: 'heavy',  name: 'HEAVY',  accent: 0xb77dff, hull: 0x6b3fb5, draw: _drawHeavy },
+];
+
+function _renderDesignTexture(scene, design, keyOverride = null) {
+  const key = keyOverride || `ship_design_${design.key}`;
+  _drawToTexture(scene, key, (g) => design.draw(g, design.accent, design.hull));
+}
+
+function _drawToTexture(scene, key, drawFn) {
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
-  // pixel-art triangle ship, 32x32, pointing up
-  const px = (x, y, w, h, c) => { g.fillStyle(c, 1); g.fillRect(x, y, w, h); };
-  // hull
-  px(14, 4, 4, 4, accent);
-  px(12, 8, 8, 4, hull);
-  px(10, 12, 12, 4, hull);
-  px(8, 16, 16, 6, hull);
-  px(6, 22, 20, 4, hull);
-  // cockpit
-  px(14, 10, 4, 4, accent);
-  // thrusters
-  px(8, 26, 4, 4, 0x333a55);
-  px(20, 26, 4, 4, 0x333a55);
-  // outline accents
-  px(13, 3, 6, 1, accent);
+  drawFn(g);
   g.generateTexture(key, 32, 32);
   g.destroy();
+}
+
+// Pixel helper shared across all ship shapes.
+const _px = (g, x, y, w, h, c) => { g.fillStyle(c, 1); g.fillRect(x, y, w, h); };
+
+function _drawArrow(g, accent, hull) {
+  // original pointed arrow — narrow, speedy silhouette
+  _px(g, 14, 4, 4, 4, accent);
+  _px(g, 12, 8, 8, 4, hull);
+  _px(g, 10, 12, 12, 4, hull);
+  _px(g, 8, 16, 16, 6, hull);
+  _px(g, 6, 22, 20, 4, hull);
+  _px(g, 14, 10, 4, 4, accent); // cockpit
+  _px(g, 8, 26, 4, 4, 0x333a55); // thrusters
+  _px(g, 20, 26, 4, 4, 0x333a55);
+  _px(g, 13, 3, 6, 1, accent);   // tip highlight
+}
+
+function _drawWing(g, accent, hull) {
+  // blunt nose + pronounced swept wings
+  _px(g, 14, 5, 4, 4, accent);
+  _px(g, 12, 9, 8, 4, hull);
+  _px(g, 10, 13, 12, 4, hull);
+  _px(g, 4, 17, 24, 4, hull);   // full-width wings
+  _px(g, 2, 21, 28, 4, hull);   // extended wingtips
+  _px(g, 6, 25, 20, 2, hull);
+  _px(g, 14, 11, 4, 4, accent); // cockpit
+  _px(g, 9, 27, 4, 3, 0x333a55);
+  _px(g, 19, 27, 4, 3, 0x333a55);
+  _px(g, 13, 4, 6, 1, accent);
+}
+
+function _drawDart(g, accent, hull) {
+  // long, thin racing needle
+  _px(g, 15, 2, 2, 4, accent);  // sharp tip
+  _px(g, 14, 6, 4, 6, hull);
+  _px(g, 13, 12, 6, 10, hull);
+  _px(g, 12, 22, 8, 4, hull);
+  _px(g, 10, 24, 3, 3, hull);   // small fins
+  _px(g, 19, 24, 3, 3, hull);
+  _px(g, 15, 10, 2, 5, accent); // narrow cockpit stripe
+  _px(g, 14, 27, 2, 3, 0x333a55);
+  _px(g, 16, 27, 2, 3, 0x333a55);
+}
+
+function _drawSaucer(g, accent, hull) {
+  // disc/diamond — rounded hex with glowing core
+  _px(g, 14, 5, 4, 2, hull);
+  _px(g, 12, 7, 8, 2, hull);
+  _px(g, 10, 9, 12, 2, hull);
+  _px(g, 8, 11, 16, 2, hull);
+  _px(g, 6, 13, 20, 6, hull);   // wide belly
+  _px(g, 8, 19, 16, 2, hull);
+  _px(g, 10, 21, 12, 2, hull);
+  _px(g, 12, 23, 8, 2, hull);
+  _px(g, 14, 25, 4, 2, hull);
+  _px(g, 13, 14, 6, 4, accent); // glowing core
+  _px(g, 14, 13, 4, 1, accent);
+  _px(g, 14, 18, 4, 1, accent);
+  _px(g, 11, 27, 3, 3, 0x333a55);
+  _px(g, 18, 27, 3, 3, 0x333a55);
+}
+
+function _drawHeavy(g, accent, hull) {
+  // squat, wide cargo hauler — chunky and intimidating
+  _px(g, 12, 4, 8, 4, accent);
+  _px(g, 10, 8, 12, 2, hull);
+  _px(g, 8, 10, 16, 4, hull);
+  _px(g, 6, 14, 20, 6, hull);   // very broad body
+  _px(g, 4, 20, 24, 4, hull);
+  _px(g, 8, 24, 16, 3, hull);
+  _px(g, 12, 10, 8, 4, accent); // big cockpit slab
+  _px(g, 5, 27, 5, 3, 0x333a55);
+  _px(g, 13, 27, 6, 3, 0x333a55);
+  _px(g, 22, 27, 5, 3, 0x333a55);
 }
 
 function _meteorTexture(scene, key) {
