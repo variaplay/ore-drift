@@ -81,13 +81,19 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
   damage(amount) {
     this.hp -= amount;
     const t = 1 - Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
-    const c = Phaser.Display.Color.Interpolate.ColorWithColor(
-      Phaser.Display.Color.IntegerToColor(this._baseTint()),
-      Phaser.Display.Color.IntegerToColor(this._hotTint()),
-      100,
-      Math.floor(t * 100),
-    );
-    this.setTint(Phaser.Display.Color.GetColor(c.r, c.g, c.b));
+
+    // Manual RGB lerp. Phaser's Color.Interpolate.ColorWithColor has leaked
+    // NaN through GetColor in some edge cases (maxHp=0, Clamp(NaN)) and
+    // silently produced black tints — that's the "meteor turns black" bug.
+    const base = this._baseTint();
+    const hot = this._hotTint();
+    const br = (base >> 16) & 0xff, bg = (base >> 8) & 0xff, bb = base & 0xff;
+    const hr = (hot >> 16) & 0xff, hg = (hot >> 8) & 0xff, hb = hot & 0xff;
+    const r = Math.round(br + (hr - br) * t);
+    const g = Math.round(bg + (hg - bg) * t);
+    const b = Math.round(bb + (hb - bb) * t);
+    this.setTint((r << 16) | (g << 8) | b);
+
     return this.hp <= 0;
   }
 

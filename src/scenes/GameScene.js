@@ -280,7 +280,16 @@ export class GameScene extends Phaser.Scene {
     // directions — makes catching much less fiddly.
     const toward = miner ? Math.atan2(miner.y - meteor.y, miner.x - meteor.x) : null;
     const yield_ = meteor.oreYield();
-    for (let i = 0; i < yield_; i++) this.ores.add(new Ore(this, meteor.x, meteor.y, 1, toward));
+    const R = meteor.radius;
+    for (let i = 0; i < yield_; i++) {
+      // spawn across the meteor's disk (sqrt for uniform area distribution)
+      // so chunks are visually distinct instead of piling up at the center
+      const ang = Math.random() * Math.PI * 2;
+      const rr = Math.sqrt(Math.random()) * R * 0.9;
+      const sx = meteor.x + Math.cos(ang) * rr;
+      const sy = meteor.y + Math.sin(ang) * rr;
+      this.ores.add(new Ore(this, sx, sy, 1, toward));
+    }
     // if large, spawn a smaller fragment
     if (meteor.radius > METEOR.minR * 2) {
       const frag = new Meteor(this, meteor.x, meteor.y, Math.max(METEOR.minR, meteor.radius * 0.55));
