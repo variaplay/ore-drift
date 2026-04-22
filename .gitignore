@@ -1,5 +1,3 @@
-.DS_Store
-node_modules/
-*.log
-.vscode/
-.idea/
+# Local Claude Code configuration (user/project hooks with absolute paths)
+.claude/settings.local.json
+.claude/
