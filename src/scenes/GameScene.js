@@ -213,11 +213,17 @@ export class GameScene extends Phaser.Scene {
     const dropped = ship.die();
     // scatter the dead ship's ore as free-floating pickups
     for (let i = 0; i < dropped; i++) this.ores.add(new Ore(this, ship.x, ship.y, 1, null));
-    Audio.playShatter();
+    Audio.playExplosion();
+    // shake the camera proportional to proximity — bigger nearby deaths feel weightier
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, ship.x, ship.y);
+    const near = Phaser.Math.Clamp(1 - d / 700, 0, 1);
+    if (near > 0) this.cameras.main.shake(260, 0.005 + near * 0.015);
 
     if (ship.isPlayer) {
       Audio.playDeath();
       Audio.stopMusic();
+      this.cameras.main.shake(500, 0.025);
+      this.cameras.main.flash(220, 255, 120, 140);
       this.events.emit('player-dead', 'ram');
       return;
     }

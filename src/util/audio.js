@@ -364,6 +364,15 @@ class AudioEngine {
     this._noiseBurst({ dur: 0.6, peak: 0.3, filterFreq: 600, filterType: 'lowpass', Q: 0.7 });
   }
 
+  playExplosion() {
+    // three-layer boom: deep thud, wide low-pass noise, high sizzle
+    this._envTone({ freq: 220, freqEnd: 35, dur: 0.55, type: 'sawtooth', peak: 0.5,
+      filter: { type: 'lowpass', freq: 800, Q: 1.2 } });
+    this._envTone({ freq: 90, freqEnd: 40, dur: 0.7, type: 'sine', peak: 0.45 });
+    this._noiseBurst({ dur: 0.45, peak: 0.5, filterFreq: 500, filterType: 'lowpass', Q: 0.7 });
+    this._noiseBurst({ dur: 0.25, peak: 0.28, filterFreq: 2600, filterType: 'bandpass', Q: 2 });
+  }
+
   playLaunch() {
     this._envTone({ freq: 220, freqEnd: 880, dur: 0.35, type: 'sawtooth', peak: 0.25,
       filter: { type: 'lowpass', freq: 2000 } });

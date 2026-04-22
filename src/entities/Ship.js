@@ -60,16 +60,81 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
   }
 
   // Called when a ship is killed (by ram or future causes). Caller decides
-  // respawn; Ship just becomes inert and spills cargo.
+  // respawn; Ship just becomes inert, runs a small VFX, and reports the
+  // amount of cargo to scatter as free-floating ore.
   die() {
-    if (!this.alive) return;
+    if (!this.alive) return 0;
     this.alive = false;
     this.setVelocity(0, 0);
     this.thrustFx.emitting = false;
     this.laserGfx.clear();
-    this.setVisible(false);
-    // scatter everything the ship was carrying as free-floating ore
+    this._spawnDeathFx();
+    // scale-up + fade, then hide — reads as an overpressure flash more than
+    // a cartoon poof because the sprite actually grows before vanishing
+    const s0 = this.scaleX;
+    this.scene.tweens.add({
+      targets: this,
+      scaleX: s0 * 1.6,
+      scaleY: s0 * 1.6,
+      alpha: 0,
+      duration: 260,
+      ease: 'Cubic.easeOut',
+      onComplete: () => this.setVisible(false),
+    });
     return this.ore;
+  }
+
+  _spawnDeathFx() {
+    const scene = this.scene;
+    const x = this.x, y = this.y;
+    const R = SHIP.radius * (this.scaleX || 1);
+
+    // debris burst — a big cone of accent-tinted sparks
+    const burst = scene.add.particles(x, y, 'spark', {
+      speed: { min: 120, max: 320 },
+      lifespan: { min: 420, max: 780 },
+      quantity: 0,
+      scale: { start: 1.4, end: 0 },
+      alpha: { start: 1, end: 0 },
+      blendMode: 'ADD',
+      tint: this.accentColor,
+      emitting: false,
+    });
+    burst.setDepth(6);
+    burst.explode(42);
+    scene.time.delayedCall(900, () => burst.destroy());
+
+    // white-hot flash core — short, additive, fades fast
+    const flash = scene.add.graphics();
+    flash.setDepth(7);
+    flash.fillStyle(0xffffff, 0.9);
+    flash.fillCircle(x, y, R * 1.2);
+    flash.setBlendMode(Phaser.BlendModes.ADD);
+    scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 140,
+      onComplete: () => flash.destroy(),
+    });
+
+    // expanding shockwave ring — thick, cubic-ease out
+    const ring = scene.add.graphics();
+    ring.setDepth(5);
+    const state = { r: R * 0.6, a: 0.9, w: 4 };
+    scene.tweens.add({
+      targets: state,
+      r: R * 6,
+      a: 0,
+      w: 1,
+      duration: 520,
+      ease: 'Cubic.easeOut',
+      onUpdate: () => {
+        ring.clear();
+        ring.lineStyle(state.w, this.accentColor, state.a);
+        ring.strokeCircle(x, y, state.r);
+      },
+      onComplete: () => ring.destroy(),
+    });
   }
 
   // ore → tier: hand-tuned stops to T5, then doubles forever (no cap)
