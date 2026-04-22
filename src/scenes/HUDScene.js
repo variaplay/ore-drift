@@ -53,7 +53,12 @@ export class HUDScene extends Phaser.Scene {
     this._layoutMinimap();
     this._layoutLeaderboard();
 
-    this.gameScene.events.on('player-dead', () => this._showMessage('OUT OF FUEL — tap to restart'));
+    this.gameScene.events.on('player-dead', (reason) => {
+      const msg = reason === 'ram'
+        ? 'HULL BREACHED — tap to restart'
+        : 'OUT OF FUEL — tap to restart';
+      this._showMessage(msg);
+    });
     this.input.on('pointerdown', () => {
       if (!this.player.alive) {
         const playerName = this.gameScene.playerName;

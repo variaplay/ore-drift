@@ -45,6 +45,9 @@ export class GameScene extends Phaser.Scene {
       if (ship.isPlayer) Audio.playPickup();
       ore.destroy();
     });
+    // ship-vs-ship ram detection runs manually each frame in update() —
+    // physics.add.overlap on a mutating array (NPCs respawn) is unreliable.
+
     this.physics.add.collider(this.ships, this.meteors, (ship, meteor) => {
       // hard hits cost fuel AND spill ore — higher-tier ships are bigger
       // targets and leak more, giving trailers a natural catch-up current
@@ -110,6 +113,9 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // ship-vs-ship ram detection: pairwise circle test each frame
+    this._resolveShipRams();
+
     // ore magnet + cleanup
     for (const ore of this.ores.getChildren()) ore.tickMagnet(this.ships);
 
@@ -131,18 +137,101 @@ export class GameScene extends Phaser.Scene {
     const indices = Array.from({ length: NPC_PALETTE.length }, (_, i) => i);
     Phaser.Utils.Array.Shuffle(indices);
     for (let i = 0; i < NPC.count; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = Phaser.Math.Between(400, WORLD.size * 0.4);
       const colorIndex = indices[i % indices.length];
-      const palette = NPC_PALETTE[colorIndex];
-      const npc = new Ship(this, Math.cos(a) * r, Math.sin(a) * r, {
-        isPlayer: false,
-        colorIndex,
-        accentColor: palette.accent,
-      });
-      npc.setController(new NpcController(this));
-      this.ships.push(npc);
+      this._spawnNpc(colorIndex);
     }
+  }
+
+  _spawnNpc(colorIndex) {
+    const palette = NPC_PALETTE[colorIndex];
+    // spawn off-screen so the player never sees an NPC materialize in view
+    let x = 0, y = 0;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Phaser.Math.Between(500, WORLD.size * 0.4);
+      x = Math.cos(a) * r;
+      y = Math.sin(a) * r;
+      if (!this._isVisibleToPlayer(x, y, 220)) break;
+    }
+    const npc = new Ship(this, x, y, {
+      isPlayer: false,
+      colorIndex,
+      accentColor: palette.accent,
+    });
+    npc.setController(new NpcController(this));
+    this.ships.push(npc);
+    return npc;
+  }
+
+  _resolveShipRams() {
+    // iterate a snapshot — _killShip removes NPCs from this.ships, which
+    // would shift indices mid-loop otherwise
+    const ships = this.ships.slice();
+    for (let i = 0; i < ships.length; i++) {
+      const a = ships[i];
+      if (!a.alive || a.isInvulnerable()) continue;
+      const ra = SHIP.radius * (a.scaleX || 1);
+      for (let j = i + 1; j < ships.length; j++) {
+        const b = ships[j];
+        if (!b.alive || b.isInvulnerable()) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const rb = SHIP.radius * (b.scaleX || 1);
+        // small expansion so visible touch always counts as contact
+        const rSum = (ra + rb) * 1.05;
+        if (dx * dx + dy * dy > rSum * rSum) continue;
+
+        // decide who rammed: "any forward-half-plane contact is a head-ram".
+        // dot > 0 means the other ship is in the ship's forward hemisphere,
+        // i.e. the collision happened on this ship's nose side (not butt).
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const aFx = Math.cos(a.heading), aFy = Math.sin(a.heading);
+        const bFx = Math.cos(b.heading), bFy = Math.sin(b.heading);
+
+        const aDot = aFx * ux + aFy * uy;       // A's facing vs A→B
+        const bDot = bFx * -ux + bFy * -uy;     // B's facing vs B→A
+        const aRams = aDot > 0;
+        const bRams = bDot > 0;
+
+        // tie-breaker for rare tangential cases: if neither is clearly a
+        // head-ram, the one with a *higher* dot still dies — otherwise the
+        // pair would clip with no consequence.
+        if (!aRams && !bRams) {
+          if (aDot >= bDot) this._killShip(a);
+          else this._killShip(b);
+        } else {
+          if (aRams) this._killShip(a);
+          if (bRams) this._killShip(b);
+        }
+        if (!a.alive) break;
+      }
+    }
+  }
+
+  _killShip(ship) {
+    const dropped = ship.die();
+    // scatter the dead ship's ore as free-floating pickups
+    for (let i = 0; i < dropped; i++) this.ores.add(new Ore(this, ship.x, ship.y, 1, null));
+    Audio.playShatter();
+
+    if (ship.isPlayer) {
+      Audio.playDeath();
+      Audio.stopMusic();
+      this.events.emit('player-dead', 'ram');
+      return;
+    }
+    // NPC — remove from active list and respawn after a pause
+    const idx = this.ships.indexOf(ship);
+    if (idx >= 0) this.ships.splice(idx, 1);
+    const colorIndex = ship.colorIndex;
+    const displayName = ship.displayName;
+    this.time.delayedCall(2500, () => {
+      if (!this.scene.isActive()) return;
+      const revived = this._spawnNpc(colorIndex);
+      if (displayName) revived.displayName = displayName;
+    });
+    ship.destroy();
   }
 
   _spawnMeteors(count = METEOR.count) {
@@ -252,6 +341,6 @@ export class GameScene extends Phaser.Scene {
   onPlayerOutOfFuel() {
     Audio.playDeath();
     Audio.stopMusic();
-    this.events.emit('player-dead');
+    this.events.emit('player-dead', 'fuel');
   }
 }
