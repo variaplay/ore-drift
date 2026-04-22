@@ -22,7 +22,9 @@ export class NpcController extends Controller {
     // makes #1 a real strategic lever rather than just a cosmetic tier.
     const score = (m) => {
       const d = Math.sqrt(Phaser.Math.Distance.Squared(ship.x, ship.y, m.x, m.y));
-      const tierBonus = m.tier === 'crystal' ? 900 : 0;
+      const tierBonus = m.tier === 'mother' ? 1500
+                      : m.tier === 'crystal' ? 900
+                      : 0;
       return tierBonus - d;
     };
     meteors.sort((a, b) => score(b) - score(a));

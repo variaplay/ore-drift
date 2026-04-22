@@ -1,4 +1,4 @@
-import { WORLD, SHIP, METEOR, NPC, NPC_PALETTE, COLORS } from '../config.js';
+import { WORLD, SHIP, METEOR, MOTHER_METEOR, NPC, NPC_PALETTE, COLORS } from '../config.js';
 import { Ship } from '../entities/Ship.js';
 import { Meteor } from '../entities/Meteor.js';
 import { Ore } from '../entities/Ore.js';
@@ -34,6 +34,8 @@ export class GameScene extends Phaser.Scene {
     this._spawnMeteors();
     this._spawnPlayer();
     this._spawnNpcs();
+    // first mother meteor is a bit after game start so players get oriented
+    this._nextMotherAt = this.time.now + MOTHER_METEOR.firstSpawnMs;
 
     // collisions
     this.physics.add.collider(this.meteors, this.meteors);
@@ -130,6 +132,37 @@ export class GameScene extends Phaser.Scene {
 
     // keep meteor pool topped up
     if (this.meteors.countActive(true) < METEOR.count * 0.7) this._spawnMeteors(10);
+
+    // scheduled mother meteor event — at most one alive at a time
+    if (this.time.now >= this._nextMotherAt && !this._hasMotherMeteor()) {
+      this._spawnMotherMeteor();
+      this._nextMotherAt = this.time.now + Phaser.Math.Between(
+        MOTHER_METEOR.spawnIntervalMsMin,
+        MOTHER_METEOR.spawnIntervalMsMax,
+      );
+    }
+  }
+
+  _hasMotherMeteor() {
+    for (const m of this.meteors.getChildren()) {
+      if (m.active && m.tier === 'mother') return true;
+    }
+    return false;
+  }
+
+  _spawnMotherMeteor() {
+    // drop it on the outer ring at a random angle and nudge it inward so it
+    // drifts across the map (players see a "thing" approaching)
+    const angle = Math.random() * Math.PI * 2;
+    const dist = WORLD.size * MOTHER_METEOR.edgeDistanceFrac;
+    const x = Math.cos(angle) * dist;
+    const y = Math.sin(angle) * dist;
+    const m = new Meteor(this, x, y, MOTHER_METEOR.radius, { tier: 'mother' });
+    // subtle inward drift so the mother visibly moves toward the center
+    m.setVelocity(-Math.cos(angle) * 30, -Math.sin(angle) * 30);
+    this.meteors.add(m);
+    Audio.playMotherIncoming?.();
+    this.events.emit('mother-spawned');
   }
 
   // ---------- spawns ----------
@@ -362,8 +395,26 @@ export class GameScene extends Phaser.Scene {
       const sy = meteor.y + Math.sin(ang) * rr;
       this.ores.add(new Ore(this, sx, sy, 1, toward));
     }
-    // if large, spawn a smaller fragment
-    if (meteor.radius > METEOR.minR * 2) {
+    if (meteor.tier === 'mother') {
+      // mother shatters into a ring of mid-sized fragments flying outward,
+      // turning the event into a scramble for the pieces
+      const N = MOTHER_METEOR.fragmentCount;
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2 + Math.random() * 0.25;
+        const off = meteor.radius * 0.35;
+        const fx = meteor.x + Math.cos(a) * off;
+        const fy = meteor.y + Math.sin(a) * off;
+        const fr = Phaser.Math.Between(MOTHER_METEOR.fragmentRadiusMin, MOTHER_METEOR.fragmentRadiusMax);
+        const frag = new Meteor(this, fx, fy, fr, { tier: 'normal' });
+        frag.setVelocity(Math.cos(a) * MOTHER_METEOR.fragmentOutwardSpeed,
+                         Math.sin(a) * MOTHER_METEOR.fragmentOutwardSpeed);
+        this.meteors.add(frag);
+      }
+      // big punchy kaboom for the event
+      Audio.playExplosion?.();
+      this.cameras.main.shake(320, 0.012);
+    } else if (meteor.radius > METEOR.minR * 2) {
+      // normal/crystal: spawn a single smaller fragment
       const frag = new Meteor(this, meteor.x, meteor.y, Math.max(METEOR.minR, meteor.radius * 0.55));
       this.meteors.add(frag);
     }

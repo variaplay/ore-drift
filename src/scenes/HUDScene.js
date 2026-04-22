@@ -58,6 +58,7 @@ export class HUDScene extends Phaser.Scene {
         : 'OUT OF FUEL — tap to restart';
       this._showMessage(msg);
     });
+    this.gameScene.events.on('mother-spawned', () => this._showToast('MOTHER METEOR DETECTED'));
     this.input.on('pointerdown', () => {
       if (!this.player.alive) {
         const playerName = this.gameScene.playerName;
@@ -150,11 +151,18 @@ export class HUDScene extends Phaser.Scene {
     const g = this.minimapDots;
     g.clear();
 
-    // meteors: tiny specks for normal, brighter squares for crystals
+    // meteors: tiny specks for normal, brighter squares for crystals,
+    // a pulsing amber ring for the mother meteor event
     for (const m of this.gameScene.meteors.getChildren()) {
       if (!m.active) continue;
       const [mx, my] = toMap(m.x, m.y);
-      if (m.tier === 'crystal') {
+      if (m.tier === 'mother') {
+        const pulse = 0.5 + 0.5 * Math.sin(time / 200);
+        g.fillStyle(COLORS.mother, 0.4 + pulse * 0.4);
+        g.fillCircle(mx, my, 4 + pulse * 2);
+        g.lineStyle(1, COLORS.motherHot, 0.9);
+        g.strokeCircle(mx, my, 4.5 + pulse * 2);
+      } else if (m.tier === 'crystal') {
         g.fillStyle(COLORS.crystal, 1);
         g.fillRect(mx - 1.5, my - 1.5, 3, 3);
       } else {
@@ -269,5 +277,30 @@ export class HUDScene extends Phaser.Scene {
 
   _showMessage(text) {
     this.msg.setText(text).setVisible(true);
+  }
+
+  _showToast(text) {
+    // transient banner near the top of the screen — used for events like the
+    // mother meteor spawn so we don't hijack the center "game over" slot
+    if (this._toast) this._toast.destroy();
+    const cam = this.cameras.main;
+    this._toast = this.add.text(cam.width / 2, 70, text, {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '16px',
+      fontStyle: 'bold',
+      color: '#ff9248',
+      stroke: '#05060c',
+      strokeThickness: 4,
+      letterSpacing: 3,
+    }).setOrigin(0.5);
+    this._toast.setAlpha(0);
+    this.tweens.add({
+      targets: this._toast,
+      alpha: 1,
+      duration: 180,
+      yoyo: true,
+      hold: 1200,
+      onComplete: () => { this._toast?.destroy(); this._toast = null; },
+    });
   }
 }

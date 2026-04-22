@@ -377,6 +377,18 @@ class AudioEngine {
     this._envTone({ freq: 220, freqEnd: 880, dur: 0.35, type: 'sawtooth', peak: 0.25,
       filter: { type: 'lowpass', freq: 2000 } });
   }
+
+  playMotherIncoming() {
+    // low ominous two-tone descent — "something big just appeared"
+    this._envTone({ freq: 220, freqEnd: 110, dur: 0.65, type: 'sawtooth', peak: 0.32,
+      filter: { type: 'lowpass', freq: 700, Q: 1.2 } });
+    setTimeout(() => {
+      this._envTone({ freq: 130, freqEnd: 70, dur: 0.9, type: 'sine', peak: 0.38 });
+    }, 180);
+    setTimeout(() => {
+      this._noiseBurst({ dur: 0.5, peak: 0.18, filterFreq: 220, filterType: 'lowpass', Q: 0.6 });
+    }, 40);
+  }
 }
 
 export const Audio = new AudioEngine();

@@ -28,7 +28,7 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    this.tier = tier; // 'normal' | 'crystal'
+    this.tier = tier; // 'normal' | 'crystal' | 'mother'
     const finalRadius = tier === 'crystal' ? radius * METEOR.crystalRadiusMult : radius;
 
     this.radius = finalRadius;
@@ -36,7 +36,10 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     // break AND drop proportionally more ore. This makes large meteors a
     // deliberate commitment and small ones quick snacks.
     const area = finalRadius * finalRadius;
-    this.hp = area * METEOR.hpPerArea * (tier === 'crystal' ? METEOR.crystalHpMult : 1);
+    const hpMult = tier === 'crystal' ? METEOR.crystalHpMult
+                 : tier === 'mother'  ? MOTHER_METEOR.hpMult
+                 : 1;
+    this.hp = area * METEOR.hpPerArea * hpMult;
     this.maxHp = this.hp;
 
     const s = finalRadius / 32;
@@ -62,28 +65,30 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     this._crackThresholds = [0.12, 0.28, 0.45, 0.62, 0.78, 0.9];
     this._nextCrackIdx = 0;
 
-    if (tier === 'crystal') {
+    const tp = TIER_PARAMS[tier];
+    if (tp?.glow) {
       // denser inner + wispier outer emitter reads as a real glow instead of
-      // a few stray sparks
+      // a few stray sparks. Mother meteors get bigger/faster versions so the
+      // event reads as a huge molten rock, not just "a big crystal".
       this.glowInner = scene.add.particles(0, 0, 'spark', {
         follow: this,
-        speed: { min: 20, max: 60 },
+        speed: { min: 20 * tp.innerScale, max: 60 * tp.innerScale },
         lifespan: { min: 260, max: 520 },
-        scale: { start: 1.0, end: 0 },
+        scale: { start: tp.innerScale, end: 0 },
         alpha: { start: 0.9, end: 0 },
         blendMode: 'ADD',
-        tint: COLORS.crystal,
-        frequency: 50,
+        tint: tp.base,
+        frequency: tp.innerFreq,
       });
       this.glowOuter = scene.add.particles(0, 0, 'spark', {
         follow: this,
         speed: { min: 4, max: 16 },
         lifespan: { min: 700, max: 1200 },
-        scale: { start: 1.8, end: 0 },
+        scale: { start: tp.outerScale, end: 0 },
         alpha: { start: 0.45, end: 0 },
         blendMode: 'ADD',
-        tint: COLORS.crystal,
-        frequency: 90,
+        tint: tp.base,
+        frequency: tp.outerFreq,
       });
 
       // animated halo ring drawn beneath the sprite — strongest signal at a
@@ -93,8 +98,8 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
-  _baseTint() { return this.tier === 'crystal' ? COLORS.crystal : COLORS.meteor; }
-  _hotTint()  { return this.tier === 'crystal' ? COLORS.crystalHot : COLORS.meteorHot; }
+  _baseTint() { return TIER_PARAMS[this.tier]?.base ?? COLORS.meteor; }
+  _hotTint()  { return TIER_PARAMS[this.tier]?.hot ?? COLORS.meteorHot; }
 
   damage(amount) {
     this.hp -= amount;
@@ -158,7 +163,9 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
 
   _computeYield() {
     const base = Math.max(1, Math.round(this.radius * this.radius * METEOR.oreYield));
-    return this.tier === 'crystal' ? base * METEOR.crystalYieldMult : base;
+    if (this.tier === 'crystal') return base * METEOR.crystalYieldMult;
+    if (this.tier === 'mother')  return Math.round(base * MOTHER_METEOR.yieldMult);
+    return base;
   }
 
   oreYield() { return this._cachedYield; }
@@ -181,20 +188,22 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
   updateVisuals(time) {
     this._drawCracks();
 
-    if (this.tier !== 'crystal' || !this.halo) return;
-    // pulsing halo: breathes on a ~1400ms cycle, always visible, so crystals
-    // are impossible to miss against the starfield
-    const pulse = 0.5 + 0.5 * Math.sin(time / 220);
+    const tp = TIER_PARAMS[this.tier];
+    if (!tp?.glow || !this.halo) return;
+    // pulsing halo: breathes on a ~1400ms cycle. Mother pulses a touch
+    // faster (feels like a molten / unstable rock).
+    const cycle = this.tier === 'mother' ? 180 : 220;
+    const pulse = 0.5 + 0.5 * Math.sin(time / cycle);
     const rBase = this.radius;
     this.halo.clear();
     // outer wide glow
-    this.halo.lineStyle(2 + pulse * 3, COLORS.crystal, 0.25 + pulse * 0.35);
+    this.halo.lineStyle(2 + pulse * 3, tp.base, 0.25 + pulse * 0.35);
     this.halo.strokeCircle(this.x, this.y, rBase + 6 + pulse * 10);
     // inner tighter glow
-    this.halo.lineStyle(1 + pulse * 2, COLORS.crystalHot, 0.4 + pulse * 0.3);
+    this.halo.lineStyle(1 + pulse * 2, tp.haloInner, 0.4 + pulse * 0.3);
     this.halo.strokeCircle(this.x, this.y, rBase + 2 + pulse * 3);
     // faint filled core to add a warm center
-    this.halo.fillStyle(COLORS.crystal, 0.1 + pulse * 0.08);
+    this.halo.fillStyle(tp.base, 0.1 + pulse * 0.08);
     this.halo.fillCircle(this.x, this.y, rBase - 2);
   }
 
@@ -203,8 +212,10 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     if (!this._crackLines.length) return;
     const cos = Math.cos(this.rotation);
     const sin = Math.sin(this.rotation);
-    // crystals use a bright teal for cracks, normal meteors use near-black
-    const color = this.tier === 'crystal' ? COLORS.crystalHot : 0x0c1018;
+    // glowing tiers use their hot tint for cracks (reads as lava in the rock);
+    // normal meteors use near-black hairlines
+    const tp = TIER_PARAMS[this.tier];
+    const color = tp?.crackColor ?? 0x0c1018;
     this._cracks.lineStyle(1.2, color, 0.9);
     for (const pts of this._crackLines) {
       this._cracks.beginPath();
