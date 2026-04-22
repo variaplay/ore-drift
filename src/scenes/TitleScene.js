@@ -158,6 +158,9 @@ export class TitleScene extends Phaser.Scene {
     Audio.unlock();
     Audio.playLaunch();
     Audio.startMusic();
+    // hide the About / Privacy / Terms footer while in-game — it overlaps
+    // the bottom-right minimap. CSS in index.html flips on body.in-game.
+    document.body.classList.add('in-game');
     this.scene.start('Game', {
       playerName: name,
       playerDesignKey: this.selectedDesignKey,
