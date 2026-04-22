@@ -213,7 +213,9 @@ export class GameScene extends Phaser.Scene {
     const dropped = ship.die();
     // scatter the dead ship's ore as free-floating pickups
     for (let i = 0; i < dropped; i++) this.ores.add(new Ore(this, ship.x, ship.y, 1, null));
-    Audio.playExplosion();
+    // optional-chain guard: if the player's browser has a stale cached
+    // audio.js from before this method existed, don't crash the game loop
+    Audio.playExplosion?.();
     // shake the camera proportional to proximity — bigger nearby deaths feel weightier
     const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, ship.x, ship.y);
     const near = Phaser.Math.Clamp(1 - d / 700, 0, 1);
