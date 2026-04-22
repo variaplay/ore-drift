@@ -102,14 +102,14 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     // so late-game ships look genuinely dominating.
     const scale = Math.min(2.5, 1 + Math.sqrt(Math.max(0, this.ore)) / 9);
 
-    // only re-sync the sprite + physics body when scale has moved enough
-    // to matter — avoids per-frame setCircle churn
+    // Only setScale — Phaser Arcade recomputes the body's width/height from
+    // sourceWidth * scaleX each frame, so we DON'T recall setCircle here.
+    // (The old code passed a pre-scaled radius, which then got scaled again
+    // by updateBounds — the resulting per-frame body resize was causing the
+    // movement jitter.)
     if (Math.abs(scale - this._lastScaleApplied) > 0.005) {
       this._lastScaleApplied = scale;
       this.setScale(scale);
-      const r = SHIP.radius * scale;
-      const off = 16 - r;
-      this.body.setCircle(r, off, off);
     }
 
     // halo ring follows the ship; brightness + width + radius all grow with ore
