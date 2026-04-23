@@ -18,6 +18,7 @@ const LEADERBOARD = {
   bgAlpha: 0.55,
   bgColor: 0x0a0f1f,
   borderColor: 0x3a4a78,
+  maxRows: 10,
 };
 
 export class HUDScene extends Phaser.Scene {
@@ -72,6 +73,13 @@ export class HUDScene extends Phaser.Scene {
 
     this.paused = false;
     this.input.keyboard.on('keydown-ESC', () => this._togglePause());
+
+    // debug: backtick (`) grants 500 ore for quick tier/size testing
+    this.input.keyboard.on('keydown-BACKTICK', () => {
+      if (!this.player?.alive) return;
+      this.player.addOre(500);
+      this._showToast('DEBUG +500 ORE');
+    });
   }
 
   _togglePause() {
@@ -213,7 +221,11 @@ export class HUDScene extends Phaser.Scene {
 
   _buildLeaderboard() {
     const ships = this.gameScene.ships;
-    const rowCount = ships.length;
+    // top N rows + (if more ships exist) one extra slot for the player when
+    // their rank falls outside the top N
+    const topN = LEADERBOARD.maxRows;
+    this._youSlotIdx = ships.length > topN ? topN : -1; // -1 = no separate row
+    const rowCount = ships.length > topN ? topN + 1 : ships.length;
     const height = LEADERBOARD.headerHeight + rowCount * LEADERBOARD.rowHeight + 8;
 
     // assign stable display names so AI labels don't reshuffle as ranks change;
@@ -243,6 +255,17 @@ export class HUDScene extends Phaser.Scene {
       this.leaderboardRows.push({ name, value });
       this.leaderboard.add([name, value]);
     }
+
+    // faint separator above the reserved "YOU" row
+    if (this._youSlotIdx >= 0) {
+      const sepY = LEADERBOARD.headerHeight + this._youSlotIdx * LEADERBOARD.rowHeight;
+      const sep = this.add.rectangle(
+        LEADERBOARD.padX, sepY - 2,
+        LEADERBOARD.width - 2 * LEADERBOARD.padX, 1,
+        LEADERBOARD.borderColor, 0.6,
+      ).setOrigin(0, 0);
+      this.leaderboard.add(sep);
+    }
   }
 
   _layoutLeaderboard() {
@@ -258,22 +281,49 @@ export class HUDScene extends Phaser.Scene {
       return b.ore - a.ore;
     });
 
+    const topN = LEADERBOARD.maxRows;
     let rank = 1;
-    for (let i = 0; i < ranked.length; i++) {
-      const ship = ranked[i];
+    // fill the top N rows (or fewer if there are fewer ships)
+    for (let i = 0; i < topN; i++) {
       const row = this.leaderboardRows[i];
+      if (!row) break;
+      const ship = ranked[i];
+      if (!ship) {
+        row.name.setText('');
+        row.value.setText('');
+        continue;
+      }
       const prefix = ship.alive ? `${rank++}.` : ' x';
       row.name.setText(`${prefix} ${ship.displayName}`);
       row.value.setText(String(ship.ore));
-
-      // tint each row with the ship's own accent so the roster matches what
-      // you see on the map; player uses their selected design's accent too
-      let color;
-      if (!ship.alive) color = '#6b7490';
-      else color = '#' + (ship.accentColor ?? 0xcfe4ff).toString(16).padStart(6, '0');
-      row.name.setColor(color);
-      row.value.setColor(color);
+      this._applyRowColor(row, ship);
     }
+
+    // reserved "YOU" row when the player is below the top N
+    if (this._youSlotIdx >= 0) {
+      const row = this.leaderboardRows[this._youSlotIdx];
+      const playerIdx = ranked.indexOf(this.player);
+      if (playerIdx >= topN) {
+        // since alive ships sort before dead, playerIdx == playerRank-1 when alive
+        const pRank = this.player.alive ? playerIdx + 1 : null;
+        const prefix = this.player.alive ? `${pRank}.` : ' x';
+        row.name.setText(`${prefix} ${this.player.displayName}`);
+        row.value.setText(String(this.player.ore));
+        this._applyRowColor(row, this.player);
+      } else {
+        // player is already shown in the top N — leave the slot blank
+        row.name.setText('');
+        row.value.setText('');
+      }
+    }
+  }
+
+  _applyRowColor(row, ship) {
+    const color = !ship.alive
+      ? '#6b7490'
+      : '#' + (ship.accentColor ?? 0xcfe4ff).toString(16).padStart(6, '0');
+    row.name.setColor(color);
+    row.value.setColor(color);
   }
 
   _showMessage(text) {
