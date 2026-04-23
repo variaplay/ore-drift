@@ -4,9 +4,13 @@ import { makePlaceholderTextures, SHIP_DESIGNS } from '../util/placeholderArt.js
 
 const NAME_KEY = 'oredrift.playerName';
 const DESIGN_KEY = 'oredrift.shipDesign';
+const AI_KEY = 'oredrift.aiCount';
 const NAME_MAX = 14;
 const THUMB_SCALE = 1.7;
 const THUMB_GAP = 62;
+const AI_MIN = 0;
+const AI_MAX = 8; // matches NPC_PALETTE.length — one color per rival
+const AI_DEFAULT = 5;
 
 export class TitleScene extends Phaser.Scene {
   constructor() { super('Title'); }
@@ -60,6 +64,37 @@ export class TitleScene extends Phaser.Scene {
       color: '#cfe4ff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
+
+    // AI rivals count picker (0–8) — compact horizontal row: label · − · N · +
+    this.aiCount = this._loadAiCount();
+    const btnStyle = {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '22px',
+      fontStyle: 'bold',
+      color: '#7df9ff',
+      backgroundColor: '#0a0f1f',
+      padding: { left: 10, right: 10, top: 2, bottom: 4 },
+    };
+    const labelStyle = {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '12px',
+      color: '#8ea1c7',
+      letterSpacing: 2,
+    };
+    const countStyle = {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '20px',
+      fontStyle: 'bold',
+      color: '#cfe4ff',
+    };
+    this.aiLabel = this.add.text(0, 0, 'AI RIVALS', labelStyle).setOrigin(1, 0.5);
+    this.aiMinus = this.add.text(0, 0, '−', btnStyle).setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this._setAiCount(this.aiCount - 1));
+    this.aiCountLabel = this.add.text(0, 0, String(this.aiCount), countStyle).setOrigin(0.5);
+    this.aiPlus = this.add.text(0, 0, '+', btnStyle).setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => this._setAiCount(this.aiCount + 1));
 
     this.prompt = this.add.text(0, 0, 'SHIP NAME', {
       fontFamily: 'ui-monospace, monospace',
@@ -152,6 +187,28 @@ export class TitleScene extends Phaser.Scene {
     return SHIP_DESIGNS[0].key;
   }
 
+  _setAiCount(n) {
+    const clamped = Phaser.Math.Clamp(n, AI_MIN, AI_MAX);
+    if (clamped === this.aiCount) return;
+    this.aiCount = clamped;
+    this.aiCountLabel.setText(String(clamped));
+    try { localStorage.setItem(AI_KEY, String(clamped)); } catch {}
+    // dim step buttons at the limits for a subtle affordance
+    this.aiMinus.setAlpha(clamped > AI_MIN ? 1 : 0.35);
+    this.aiPlus.setAlpha(clamped < AI_MAX ? 1 : 0.35);
+    Audio.attachToPhaser(this);
+    Audio.unlock();
+    Audio.playUiClick();
+  }
+
+  _loadAiCount() {
+    try {
+      const n = parseInt(localStorage.getItem(AI_KEY), 10);
+      if (Number.isFinite(n) && n >= AI_MIN && n <= AI_MAX) return n;
+    } catch {}
+    return AI_DEFAULT;
+  }
+
   _launch(rawName) {
     const name = this._sanitize(rawName);
     try { localStorage.setItem(NAME_KEY, name); } catch {}
@@ -165,6 +222,7 @@ export class TitleScene extends Phaser.Scene {
     this.scene.start('Game', {
       playerName: name,
       playerDesignKey: this.selectedDesignKey,
+      aiCount: this.aiCount,
     });
   }
 
@@ -186,22 +244,32 @@ export class TitleScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const cx = cam.width / 2;
     const cy = cam.height / 2;
-    this.title.setPosition(cx, cy - 200);
-    this.subtitle.setPosition(cx, cy - 155);
+    this.title.setPosition(cx, cy - 230);
+    this.subtitle.setPosition(cx, cy - 185);
 
     // ship picker row — centered, spaced by THUMB_GAP
-    this.shipPrompt.setPosition(cx, cy - 110);
+    this.shipPrompt.setPosition(cx, cy - 140);
     const n = this.thumbs.length;
     const rowW = (n - 1) * THUMB_GAP;
     const startX = cx - rowW / 2;
-    const thumbY = cy - 65;
+    const thumbY = cy - 95;
     this.thumbs.forEach((t, i) => t.img.setPosition(startX + i * THUMB_GAP, thumbY));
     // shipName position is set to sit under the selected thumbnail in
     // _refreshSelection(); no fixed center position here
 
-    // name prompt + DOM form below the picker
-    this.prompt.setPosition(cx, cy + 10);
-    this.form.setPosition(cx, cy + 80);
+    // AI rivals picker row: [AI RIVALS] [−] [N] [+]
+    const aiY = cy - 20;
+    this.aiLabel.setPosition(cx - 30, aiY);
+    this.aiMinus.setPosition(cx - 2, aiY);
+    this.aiCountLabel.setPosition(cx + 36, aiY);
+    this.aiPlus.setPosition(cx + 74, aiY);
+    // apply min/max dim on initial layout
+    this.aiMinus.setAlpha(this.aiCount > AI_MIN ? 1 : 0.35);
+    this.aiPlus.setAlpha(this.aiCount < AI_MAX ? 1 : 0.35);
+
+    // name prompt + DOM form below the AI picker
+    this.prompt.setPosition(cx, cy + 20);
+    this.form.setPosition(cx, cy + 90);
 
     // redraw selection ring at the new position
     if (this.thumbs.length) this._refreshSelection();

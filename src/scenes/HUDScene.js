@@ -63,9 +63,10 @@ export class HUDScene extends Phaser.Scene {
       if (!this.player.alive) {
         const playerName = this.gameScene.playerName;
         const playerDesignKey = this.gameScene.playerDesignKey;
+        const aiCount = this.gameScene.aiCount;
         this.scene.stop('HUD');
         this.scene.stop('Game');
-        this.scene.start('Game', { playerName, playerDesignKey });
+        this.scene.start('Game', { playerName, playerDesignKey, aiCount });
       }
     });
 

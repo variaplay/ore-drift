@@ -20,6 +20,11 @@ export class GameScene extends Phaser.Scene {
   create(data = {}) {
     this.playerName = data.playerName || this.playerName || 'PILOT';
     this.playerDesignKey = data.playerDesignKey || this.playerDesignKey || SHIP_DESIGNS[0].key;
+    // aiCount is chosen on the title screen; fall back to the config default
+    // if the scene was started without one (e.g. dev hot-restart).
+    this.aiCount = Number.isFinite(data.aiCount)
+      ? data.aiCount
+      : (Number.isFinite(this.aiCount) ? this.aiCount : NPC.count);
     Audio.attachToPhaser(this);
     this.physics.world.setBounds(-WORLD.size / 2, -WORLD.size / 2, WORLD.size, WORLD.size);
     this.cameras.main.setBackgroundColor('#05060c');
@@ -183,7 +188,7 @@ export class GameScene extends Phaser.Scene {
     // shuffle palette indices so color assignment isn't always the same order
     const indices = Array.from({ length: NPC_PALETTE.length }, (_, i) => i);
     Phaser.Utils.Array.Shuffle(indices);
-    for (let i = 0; i < NPC.count; i++) {
+    for (let i = 0; i < this.aiCount; i++) {
       const colorIndex = indices[i % indices.length];
       this._spawnNpc(colorIndex);
     }
