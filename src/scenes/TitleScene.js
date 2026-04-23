@@ -138,9 +138,10 @@ export class TitleScene extends Phaser.Scene {
     for (const t of this.thumbs) {
       t.img.setAlpha(t.design.key === this.selectedDesignKey ? 1 : 0.55);
     }
-    // show the name of the currently picked ship
+    // show the name directly under the selected ship thumbnail
     this.shipName.setText(selected.design.name);
     this.shipName.setColor('#' + ringColor.toString(16).padStart(6, '0'));
+    this.shipName.setPosition(selected.img.x, selected.img.y + 34);
   }
 
   _loadDesign() {
@@ -195,7 +196,8 @@ export class TitleScene extends Phaser.Scene {
     const startX = cx - rowW / 2;
     const thumbY = cy - 65;
     this.thumbs.forEach((t, i) => t.img.setPosition(startX + i * THUMB_GAP, thumbY));
-    this.shipName.setPosition(cx, thumbY + 34);
+    // shipName position is set to sit under the selected thumbnail in
+    // _refreshSelection(); no fixed center position here
 
     // name prompt + DOM form below the picker
     this.prompt.setPosition(cx, cy + 10);
