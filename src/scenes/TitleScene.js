@@ -9,7 +9,9 @@ const NAME_MAX = 14;
 const THUMB_SCALE = 1.7;
 const THUMB_GAP = 62;
 const AI_MIN = 0;
-const AI_MAX = 8; // matches NPC_PALETTE.length — one color per rival
+// no upper cap — _spawnNpcs wraps `i % NPC_PALETTE.length`, so a 12th rival
+// just reuses a palette color. Large values will cost frame rate, but that's
+// the player's call.
 const AI_DEFAULT = 5;
 
 export class TitleScene extends Phaser.Scene {
@@ -188,14 +190,13 @@ export class TitleScene extends Phaser.Scene {
   }
 
   _setAiCount(n) {
-    const clamped = Phaser.Math.Clamp(n, AI_MIN, AI_MAX);
+    const clamped = Math.max(AI_MIN, Math.floor(n));
     if (clamped === this.aiCount) return;
     this.aiCount = clamped;
     this.aiCountLabel.setText(String(clamped));
     try { localStorage.setItem(AI_KEY, String(clamped)); } catch {}
-    // dim step buttons at the limits for a subtle affordance
+    // only the − button dims at the 0 floor; no upper cap so + is always lit
     this.aiMinus.setAlpha(clamped > AI_MIN ? 1 : 0.35);
-    this.aiPlus.setAlpha(clamped < AI_MAX ? 1 : 0.35);
     Audio.attachToPhaser(this);
     Audio.unlock();
     Audio.playUiClick();
@@ -204,7 +205,7 @@ export class TitleScene extends Phaser.Scene {
   _loadAiCount() {
     try {
       const n = parseInt(localStorage.getItem(AI_KEY), 10);
-      if (Number.isFinite(n) && n >= AI_MIN && n <= AI_MAX) return n;
+      if (Number.isFinite(n) && n >= AI_MIN) return n;
     } catch {}
     return AI_DEFAULT;
   }
@@ -263,9 +264,9 @@ export class TitleScene extends Phaser.Scene {
     this.aiMinus.setPosition(cx - 2, aiY);
     this.aiCountLabel.setPosition(cx + 36, aiY);
     this.aiPlus.setPosition(cx + 74, aiY);
-    // apply min/max dim on initial layout
+    // apply min dim on initial layout (no upper cap to dim at)
     this.aiMinus.setAlpha(this.aiCount > AI_MIN ? 1 : 0.35);
-    this.aiPlus.setAlpha(this.aiCount < AI_MAX ? 1 : 0.35);
+    this.aiPlus.setAlpha(1);
 
     // name prompt + DOM form below the AI picker
     this.prompt.setPosition(cx, cy + 20);
