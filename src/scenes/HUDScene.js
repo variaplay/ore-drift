@@ -252,6 +252,20 @@ export class HUDScene extends Phaser.Scene {
       g.fillRect(ox - 1, oy - 1, 2, 2);
     }
 
+    // death clouds: recent kill sites get a pulsing ring so they read as
+    // scavenging opportunities instead of just another loose ore cluster.
+    for (const cloud of this.gameScene.deathClouds || []) {
+      const [dx, dy] = toMap(cloud.x, cloud.y);
+      const age = Math.max(0, time - cloud.bornAt);
+      const life = Math.max(1, cloud.expiresAt - cloud.bornAt);
+      const fade = 1 - Phaser.Math.Clamp(age / life, 0, 1);
+      const pulse = 0.5 + 0.5 * Math.sin(time / 140);
+      g.lineStyle(1.5, cloud.color ?? COLORS.ore, fade * (0.45 + pulse * 0.45));
+      g.strokeCircle(dx, dy, 5 + pulse * 3);
+      g.fillStyle(COLORS.ore, fade * 0.75);
+      g.fillCircle(dx, dy, 2);
+    }
+
     // NPC ships: each in its own hull color so players can pick them apart
     for (const ship of this.gameScene.ships) {
       if (ship === this.player || !ship.alive) continue;

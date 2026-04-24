@@ -7,6 +7,16 @@ import { NpcController } from '../controllers/NpcController.js';
 import { makePlaceholderTextures, SHIP_DESIGNS } from '../util/placeholderArt.js';
 import { Audio } from '../util/audio.js';
 
+const DEATH_CLOUD = {
+  radiusBase: 80,
+  radiusPerScale: 22,
+  flingSpeedMin: 90,
+  flingSpeedMax: 190,
+  lifetime: 16000,
+  markerLifetime: 6500,
+  tint: 0xfff0a8,
+};
+
 export class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
 
@@ -35,6 +45,7 @@ export class GameScene extends Phaser.Scene {
     this.meteors = this.physics.add.group({ classType: Meteor });
     this.ores = this.physics.add.group({ classType: Ore });
     this.ships = [];
+    this.deathClouds = [];
     this.runStats = {
       startedAt: this.time.now,
       survivedMs: 0,
@@ -148,6 +159,7 @@ export class GameScene extends Phaser.Scene {
 
     // ore magnet + cleanup
     for (const ore of this.ores.getChildren()) ore.tickMagnet(this.ships);
+    this._cleanupDeathClouds();
 
     // keep meteor pool topped up
     if (this.meteors.countActive(true) < METEOR.count * 0.7) this._spawnMeteors(10);
@@ -329,8 +341,7 @@ export class GameScene extends Phaser.Scene {
 
   _killShip(ship, killer = null) {
     const dropped = ship.die();
-    // scatter the dead ship's ore as free-floating pickups
-    for (let i = 0; i < dropped; i++) this.ores.add(new Ore(this, ship.x, ship.y, 1, null));
+    this._spawnDeathCloud(ship, dropped);
     // optional-chain guard: if the player's browser has a stale cached
     // audio.js from before this method existed, don't crash the game loop
     Audio.playExplosion?.();
@@ -360,6 +371,72 @@ export class GameScene extends Phaser.Scene {
       if (displayName) revived.displayName = displayName;
     });
     ship.destroy();
+  }
+
+  _spawnDeathCloud(ship, dropped) {
+    if (dropped <= 0) return;
+    const scale = ship.scaleX || 1;
+    const count = dropped;
+    const radius = DEATH_CLOUD.radiusBase + scale * DEATH_CLOUD.radiusPerScale;
+    const marker = {
+      x: ship.x,
+      y: ship.y,
+      bornAt: this.time.now,
+      expiresAt: this.time.now + DEATH_CLOUD.markerLifetime,
+      value: count,
+      color: ship.accentColor ?? DEATH_CLOUD.tint,
+    };
+    this.deathClouds.push(marker);
+
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.35, 0.35);
+      const r = Phaser.Math.FloatBetween(radius * 0.25, radius);
+      const x = ship.x + Math.cos(a) * r * 0.25;
+      const y = ship.y + Math.sin(a) * r * 0.25;
+      const ore = new Ore(this, x, y, 1, a, {
+        deathCloud: true,
+        flingSpeedMin: DEATH_CLOUD.flingSpeedMin,
+        flingSpeedMax: DEATH_CLOUD.flingSpeedMax,
+        lifetime: DEATH_CLOUD.lifetime,
+        tint: DEATH_CLOUD.tint,
+        scale: 1.15,
+      });
+      ore.body.velocity.x += Math.cos(a) * r;
+      ore.body.velocity.y += Math.sin(a) * r;
+      this.ores.add(ore);
+    }
+
+    this._drawDeathCloudMarker(marker, radius);
+    this.events.emit('death-cloud-spawned', marker);
+  }
+
+  _drawDeathCloudMarker(marker, radius) {
+    const g = this.add.graphics();
+    g.setDepth(4);
+    g.setBlendMode(Phaser.BlendModes.ADD);
+    const state = { r: radius * 0.35, a: 0.7, w: 4 };
+    this.tweens.add({
+      targets: state,
+      r: radius,
+      a: 0,
+      w: 1,
+      duration: 900,
+      ease: 'Cubic.easeOut',
+      onUpdate: () => {
+        g.clear();
+        g.lineStyle(state.w, marker.color, state.a);
+        g.strokeCircle(marker.x, marker.y, state.r);
+        g.lineStyle(1, DEATH_CLOUD.tint, state.a * 0.7);
+        g.strokeCircle(marker.x, marker.y, state.r * 0.62);
+      },
+      onComplete: () => g.destroy(),
+    });
+  }
+
+  _cleanupDeathClouds() {
+    const now = this.time.now;
+    if (!this.deathClouds.length) return;
+    this.deathClouds = this.deathClouds.filter((cloud) => cloud.expiresAt > now);
   }
 
   _spawnMeteors(count = METEOR.count) {

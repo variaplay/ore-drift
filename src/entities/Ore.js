@@ -4,7 +4,7 @@ export class Ore extends Phaser.Physics.Arcade.Sprite {
   // `towardAngle` (optional): preferred fling direction — usually the angle
   // pointing from the meteor toward the miner. Keeps ore drifting toward
   // whoever cracked the rock instead of uniformly spraying.
-  constructor(scene, x, y, value = 1, towardAngle = null) {
+  constructor(scene, x, y, value = 1, towardAngle = null, options = {}) {
     super(scene, x, y, 'ore');
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -19,12 +19,18 @@ export class Ore extends Phaser.Physics.Arcade.Sprite {
     } else {
       a = Math.random() * Math.PI * 2;
     }
-    const s = Phaser.Math.FloatBetween(ORE.flingSpeedMin, ORE.flingSpeedMax);
+    const s = Phaser.Math.FloatBetween(
+      options.flingSpeedMin ?? ORE.flingSpeedMin,
+      options.flingSpeedMax ?? ORE.flingSpeedMax,
+    );
     this.setVelocity(Math.cos(a) * s, Math.sin(a) * s);
     this.setDamping(true);
     this.setDrag(ORE.drag);
     this.bornAt = scene.time.now;
-    this.setTint(0xffd66b);
+    this.lifetime = options.lifetime ?? ORE.lifetime;
+    this.isDeathCloudOre = !!options.deathCloud;
+    this.setTint(options.tint ?? 0xffd66b);
+    if (options.scale) this.setScale(options.scale);
   }
 
   tickMagnet(ships) {
@@ -62,6 +68,6 @@ export class Ore extends Phaser.Physics.Arcade.Sprite {
         this.body.velocity.y *= ORE.maxSpeed / vmag;
       }
     }
-    if (this.scene.time.now - this.bornAt > ORE.lifetime) this.destroy();
+    if (this.scene.time.now - this.bornAt > this.lifetime) this.destroy();
   }
 }
