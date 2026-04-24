@@ -21,6 +21,14 @@ const LEADERBOARD = {
   maxRows: 10,
 };
 
+const SUMMARY = {
+  width: 340,
+  height: 260,
+  bgColor: 0x081126,
+  borderColor: 0xffd66b,
+  padX: 28,
+};
+
 export class HUDScene extends Phaser.Scene {
   constructor() { super('HUD'); }
 
@@ -40,6 +48,7 @@ export class HUDScene extends Phaser.Scene {
 
     this._buildMinimap();
     this._buildLeaderboard();
+    this._buildSummaryPanel();
     this._lowFuelNextBeep = 0;
     // M key still toggles mute; the on-screen label was removed by request
     this.input.keyboard.on('keydown-M', () => Audio.toggleMute());
@@ -48,16 +57,15 @@ export class HUDScene extends Phaser.Scene {
       this._layoutMsg();
       this._layoutMinimap();
       this._layoutLeaderboard();
+      this._layoutSummaryPanel();
     });
     this._layoutMsg();
     this._layoutMinimap();
     this._layoutLeaderboard();
+    this._layoutSummaryPanel();
 
     this.gameScene.events.on('player-dead', (reason) => {
-      const msg = reason === 'ram'
-        ? 'HULL BREACHED — tap to restart'
-        : 'OUT OF FUEL — tap to restart';
-      this._showMessage(msg);
+      this._showRunSummary(reason);
     });
     this.gameScene.events.on('mother-spawned', () => this._showToast('MOTHER METEOR DETECTED'));
     this.input.on('pointerdown', () => {
@@ -134,6 +142,62 @@ export class HUDScene extends Phaser.Scene {
   _layoutMsg() {
     const cam = this.cameras.main;
     this.msg.setPosition(cam.width / 2, cam.height / 2);
+  }
+
+  _buildSummaryPanel() {
+    this.summary = this.add.container(0, 0).setDepth(50).setVisible(false);
+    this.summaryBg = this.add.rectangle(0, 0, SUMMARY.width, SUMMARY.height, SUMMARY.bgColor, 0.9)
+      .setOrigin(0.5)
+      .setStrokeStyle(2, SUMMARY.borderColor, 0.95);
+    this.summaryGlow = this.add.rectangle(0, 0, SUMMARY.width + 12, SUMMARY.height + 12, SUMMARY.borderColor, 0.08)
+      .setOrigin(0.5);
+    this.summaryTitle = this.add.text(0, -104, 'RUN COMPLETE', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '22px',
+      fontStyle: 'bold',
+      color: '#ffd66b',
+      letterSpacing: 2,
+    }).setOrigin(0.5);
+    this.summaryCause = this.add.text(0, -76, '', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '12px',
+      color: '#8ea1c7',
+      letterSpacing: 2,
+    }).setOrigin(0.5);
+
+    this.summaryRows = [];
+    const labelStyle = { fontFamily: 'ui-monospace, monospace', fontSize: '14px', color: '#8ea1c7' };
+    const valueStyle = { fontFamily: 'ui-monospace, monospace', fontSize: '14px', color: '#cfe4ff', fontStyle: 'bold' };
+    for (let i = 0; i < 6; i++) {
+      const y = -40 + i * 24;
+      const label = this.add.text(-SUMMARY.width / 2 + SUMMARY.padX, y, '', labelStyle).setOrigin(0, 0.5);
+      const value = this.add.text(SUMMARY.width / 2 - SUMMARY.padX, y, '', valueStyle).setOrigin(1, 0.5);
+      this.summaryRows.push({ label, value });
+    }
+
+    this.summaryRestart = this.add.text(0, 104, 'TAP TO LAUNCH AGAIN', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '13px',
+      fontStyle: 'bold',
+      color: '#7df9ff',
+      letterSpacing: 2,
+    }).setOrigin(0.5);
+
+    this.summary.add([
+      this.summaryGlow,
+      this.summaryBg,
+      this.summaryTitle,
+      this.summaryCause,
+      ...this.summaryRows.flatMap((r) => [r.label, r.value]),
+      this.summaryRestart,
+    ]);
+  }
+
+  _layoutSummaryPanel() {
+    const cam = this.cameras.main;
+    this.summary.setPosition(cam.width / 2, cam.height / 2);
+    this._summaryScale = Math.min(1, (cam.width - 24) / SUMMARY.width, (cam.height - 24) / SUMMARY.height);
+    this.summary.setScale(this._summaryScale);
   }
 
   update(time) {
@@ -328,6 +392,45 @@ export class HUDScene extends Phaser.Scene {
 
   _showMessage(text) {
     this.msg.setText(text).setVisible(true);
+  }
+
+  _showRunSummary(reason) {
+    const stats = this.gameScene.runStats || {};
+    this.msg.setVisible(false);
+    this.summaryCause.setText(reason === 'ram' ? 'HULL BREACHED' : 'OUT OF FUEL');
+
+    const rows = [
+      ['TIME', this._formatTime(stats.survivedMs || 0)],
+      ['RANK', stats.finalRank ? `#${stats.finalRank}` : '-'],
+      ['ORE BANKED', String(stats.finalOre ?? this.player.ore ?? 0)],
+      ['ORE SCOOPED', String(stats.oreCollected ?? 0)],
+      ['METEORS CRACKED', String(stats.meteorsShattered ?? 0)],
+      ['RIVALS DESTROYED', String(stats.rivalsDestroyed ?? 0)],
+    ];
+    for (let i = 0; i < this.summaryRows.length; i++) {
+      const row = this.summaryRows[i];
+      const data = rows[i];
+      row.label.setText(data?.[0] || '');
+      row.value.setText(data?.[1] || '');
+    }
+    this.summary.setVisible(true);
+    this.summary.setAlpha(0);
+    const scale = this._summaryScale || 1;
+    this.summary.setScale(scale * 0.96);
+    this.tweens.add({
+      targets: this.summary,
+      alpha: 1,
+      scale,
+      duration: 180,
+      ease: 'Cubic.easeOut',
+    });
+  }
+
+  _formatTime(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const min = Math.floor(total / 60);
+    const sec = total % 60;
+    return `${min}:${String(sec).padStart(2, '0')}`;
   }
 
   _showToast(text) {

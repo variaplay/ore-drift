@@ -35,6 +35,16 @@ export class GameScene extends Phaser.Scene {
     this.meteors = this.physics.add.group({ classType: Meteor });
     this.ores = this.physics.add.group({ classType: Ore });
     this.ships = [];
+    this.runStats = {
+      startedAt: this.time.now,
+      survivedMs: 0,
+      oreCollected: 0,
+      meteorsShattered: 0,
+      crystalsShattered: 0,
+      motherMeteorsShattered: 0,
+      rivalsDestroyed: 0,
+      deathReason: null,
+    };
 
     this._spawnMeteors();
     this._spawnPlayer();
@@ -50,7 +60,10 @@ export class GameScene extends Phaser.Scene {
       // re-absorb the ore it just dropped
       if (ship._noPickupUntil && this.time.now < ship._noPickupUntil) return;
       ship.addOre(ore.value);
-      if (ship.isPlayer) Audio.playPickup();
+      if (ship.isPlayer) {
+        this.runStats.oreCollected += ore.value;
+        Audio.playPickup();
+      }
       ore.destroy();
     });
     // ship-vs-ship ram detection runs manually each frame in update() —
@@ -84,6 +97,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_time, deltaMs) {
     const dt = deltaMs / 1000;
+    if (this.player?.alive) this.runStats.survivedMs = this.time.now - this.runStats.startedAt;
 
     // drive all ships through their controllers
     for (const ship of this.ships) ship.tick(dt);
@@ -304,8 +318,8 @@ export class GameScene extends Phaser.Scene {
         const aDot = aFx * ux + aFy * uy;       // A's facing vs A→B
         const bDot = bFx * -ux + bFy * -uy;     // B's facing vs B→A
         const HEAD = 0.6;
-        if (aDot > HEAD) this._killShip(a);
-        if (bDot > HEAD) this._killShip(b);
+        if (aDot > HEAD) this._killShip(a, b);
+        if (bDot > HEAD) this._killShip(b, a);
         // No tangential tie-breaker — if both ships' noses are pointed away
         // from the contact, the collision is a side-brush and nobody dies.
         if (!a.alive) break;
@@ -313,7 +327,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  _killShip(ship) {
+  _killShip(ship, killer = null) {
     const dropped = ship.die();
     // scatter the dead ship's ore as free-floating pickups
     for (let i = 0; i < dropped; i++) this.ores.add(new Ore(this, ship.x, ship.y, 1, null));
@@ -330,9 +344,11 @@ export class GameScene extends Phaser.Scene {
       Audio.stopMusic();
       this.cameras.main.shake(500, 0.025);
       this.cameras.main.flash(220, 255, 120, 140);
+      this._finalizeRunStats('ram');
       this.events.emit('player-dead', 'ram');
       return;
     }
+    if (killer?.isPlayer) this.runStats.rivalsDestroyed++;
     // NPC — remove from active list and respawn after a pause
     const idx = this.ships.indexOf(ship);
     if (idx >= 0) this.ships.splice(idx, 1);
@@ -385,6 +401,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   _shatterMeteor(meteor, miner = null) {
+    if (miner?.isPlayer) {
+      this.runStats.meteorsShattered++;
+      if (meteor.tier === 'crystal') this.runStats.crystalsShattered++;
+      if (meteor.tier === 'mother') this.runStats.motherMeteorsShattered++;
+    }
     // Bias the ore spray toward the ship that shattered the meteor so
     // chunks drift toward the miner instead of flying off in random
     // directions — makes catching much less fiddly.
@@ -487,6 +508,23 @@ export class GameScene extends Phaser.Scene {
   onPlayerOutOfFuel() {
     Audio.playDeath();
     Audio.stopMusic();
+    this._finalizeRunStats('fuel');
     this.events.emit('player-dead', 'fuel');
+  }
+
+  _finalizeRunStats(reason) {
+    if (this.runStats.deathReason) return this.runStats;
+    this.runStats.deathReason = reason;
+    this.runStats.survivedMs = this.time.now - this.runStats.startedAt;
+    this.runStats.finalOre = this.player?.ore ?? 0;
+    this.runStats.finalRank = this._playerRank();
+    return this.runStats;
+  }
+
+  _playerRank() {
+    if (!this.player) return null;
+    const ranked = [...this.ships].sort((a, b) => b.ore - a.ore);
+    const idx = ranked.indexOf(this.player);
+    return idx >= 0 ? idx + 1 : null;
   }
 }
