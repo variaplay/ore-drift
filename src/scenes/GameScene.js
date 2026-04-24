@@ -3,7 +3,7 @@ import { Ship } from '../entities/Ship.js';
 import { Meteor } from '../entities/Meteor.js';
 import { Ore } from '../entities/Ore.js';
 import { LocalInputController } from '../controllers/LocalInputController.js';
-import { NpcController } from '../controllers/NpcController.js';
+import { NpcController, NPC_PERSONALITIES, npcPersonalityByIndex } from '../controllers/NpcController.js';
 import { makePlaceholderTextures, SHIP_DESIGNS } from '../util/placeholderArt.js';
 import { Audio } from '../util/audio.js';
 
@@ -46,6 +46,7 @@ export class GameScene extends Phaser.Scene {
     this.ores = this.physics.add.group({ classType: Ore });
     this.ships = [];
     this.deathClouds = [];
+    this._npcSerial = 0;
     this.runStats = {
       startedAt: this.time.now,
       survivedMs: 0,
@@ -216,11 +217,11 @@ export class GameScene extends Phaser.Scene {
     Phaser.Utils.Array.Shuffle(indices);
     for (let i = 0; i < this.aiCount; i++) {
       const colorIndex = indices[i % indices.length];
-      this._spawnNpc(colorIndex);
+      this._spawnNpc(colorIndex, npcPersonalityByIndex(i));
     }
   }
 
-  _spawnNpc(colorIndex) {
+  _spawnNpc(colorIndex, personalityKey = 'miner', displayName = null) {
     const palette = NPC_PALETTE[colorIndex];
     // spawn off-screen so the player never sees an NPC materialize in view
     let x = 0, y = 0;
@@ -240,7 +241,11 @@ export class GameScene extends Phaser.Scene {
       designKey: design.key,
       accentColor: palette.accent,
     });
-    npc.setController(new NpcController(this));
+    const key = NPC_PERSONALITIES[personalityKey] ? personalityKey : 'miner';
+    const profile = NPC_PERSONALITIES[key];
+    npc.personalityKey = key;
+    npc.displayName = displayName || `${profile.label}-${++this._npcSerial}`;
+    npc.setController(new NpcController(this, key));
     this.ships.push(npc);
     return npc;
   }
@@ -365,10 +370,10 @@ export class GameScene extends Phaser.Scene {
     if (idx >= 0) this.ships.splice(idx, 1);
     const colorIndex = ship.colorIndex;
     const displayName = ship.displayName;
+    const personalityKey = ship.personalityKey;
     this.time.delayedCall(2500, () => {
       if (!this.scene.isActive()) return;
-      const revived = this._spawnNpc(colorIndex);
-      if (displayName) revived.displayName = displayName;
+      this._spawnNpc(colorIndex, personalityKey, displayName);
     });
     ship.destroy();
   }
