@@ -259,7 +259,7 @@ export class TitleScene extends Phaser.Scene {
     // _refreshSelection(); no fixed center position here
 
     // AI rivals picker row: [AI RIVALS] [−] [N] [+]
-    const aiY = cy - 20;
+    const aiY = cy + 5;
     this.aiLabel.setPosition(cx - 30, aiY);
     this.aiMinus.setPosition(cx - 2, aiY);
     this.aiCountLabel.setPosition(cx + 36, aiY);
@@ -269,8 +269,8 @@ export class TitleScene extends Phaser.Scene {
     this.aiPlus.setAlpha(1);
 
     // name prompt + DOM form below the AI picker
-    this.prompt.setPosition(cx, cy + 20);
-    this.form.setPosition(cx, cy + 90);
+    this.prompt.setPosition(cx, cy + 45);
+    this.form.setPosition(cx, cy + 115);
 
     // redraw selection ring at the new position
     if (this.thumbs.length) this._refreshSelection();
