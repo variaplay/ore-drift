@@ -178,7 +178,7 @@ export class TitleScene extends Phaser.Scene {
     // show the name directly under the selected ship thumbnail
     this.shipName.setText(selected.design.name);
     this.shipName.setColor('#' + ringColor.toString(16).padStart(6, '0'));
-    this.shipName.setPosition(selected.img.x, selected.img.y + 34);
+    this.shipName.setPosition(selected.img.x, selected.img.y + 48);
   }
 
   _loadDesign() {
