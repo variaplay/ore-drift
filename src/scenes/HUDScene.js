@@ -1,4 +1,4 @@
-import { SHIP, WORLD, COLORS } from '../config.js';
+import { WORLD, COLORS } from '../config.js';
 import { Audio } from '../util/audio.js';
 
 const MINIMAP = {
@@ -73,9 +73,10 @@ export class HUDScene extends Phaser.Scene {
         const playerName = this.gameScene.playerName;
         const playerDesignKey = this.gameScene.playerDesignKey;
         const aiCount = this.gameScene.aiCount;
+        const playerUpgrades = this.gameScene.playerUpgrades;
         this.scene.stop('HUD');
         this.scene.stop('Game');
-        this.scene.start('Game', { playerName, playerDesignKey, aiCount });
+        this.scene.start('Game', { playerName, playerDesignKey, aiCount, playerUpgrades });
       }
     });
 
@@ -175,13 +176,24 @@ export class HUDScene extends Phaser.Scene {
       this.summaryRows.push({ label, value });
     }
 
-    this.summaryRestart = this.add.text(0, 116, 'TAP TO LAUNCH AGAIN', {
+    this.summaryRestart = this.add.text(0, 108, 'TAP TO LAUNCH AGAIN', {
       fontFamily: 'ui-monospace, monospace',
       fontSize: '13px',
       fontStyle: 'bold',
       color: '#7df9ff',
       letterSpacing: 2,
     }).setOrigin(0.5);
+    this.summaryShop = this.add.text(0, 130, 'SHOP', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '12px',
+      fontStyle: 'bold',
+      color: '#ffd66b',
+      letterSpacing: 2,
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    this.summaryShop.on('pointerdown', (_pointer, _lx, _ly, event) => {
+      event?.stopPropagation?.();
+      this._returnToTitle();
+    });
 
     this.summary.add([
       this.summaryGlow,
@@ -190,7 +202,17 @@ export class HUDScene extends Phaser.Scene {
       this.summaryCause,
       ...this.summaryRows.flatMap((r) => [r.label, r.value]),
       this.summaryRestart,
+      this.summaryShop,
     ]);
+  }
+
+  _returnToTitle() {
+    const playerName = this.gameScene.playerName;
+    const playerDesignKey = this.gameScene.playerDesignKey;
+    const aiCount = this.gameScene.aiCount;
+    this.scene.stop('HUD');
+    this.scene.stop('Game');
+    this.scene.start('Title', { playerName, playerDesignKey, aiCount });
   }
 
   _layoutSummaryPanel() {
@@ -202,7 +224,7 @@ export class HUDScene extends Phaser.Scene {
 
   update(time) {
     if (!this.player) return;
-    const pct = Phaser.Math.Clamp(this.player.fuel / SHIP.fuelMax, 0, 1);
+    const pct = Phaser.Math.Clamp(this.player.fuel / this.player.stats.fuelMax, 0, 1);
     this.fuelBar.width = 160 * pct;
     this.fuelBar.fillColor = pct < 0.25 ? 0xff6b7b : 0x7df9ff;
     if (this.player.alive && pct < 0.25 && time > this._lowFuelNextBeep) {
@@ -417,9 +439,9 @@ export class HUDScene extends Phaser.Scene {
       ['TIME', this._formatTime(stats.survivedMs || 0)],
       ['RANK', stats.finalRank ? `#${stats.finalRank}` : '-'],
       ['ORE BANKED', String(stats.finalOre ?? this.player.ore ?? 0)],
+      ['BANK EARNED', String(stats.persistentOreEarned ?? 0)],
       ['ORE SCOOPED', String(stats.oreCollected ?? 0)],
       ['METEORS CRACKED', String(stats.meteorsShattered ?? 0)],
-      ['RIVALS DESTROYED', String(stats.rivalsDestroyed ?? 0)],
     ];
     for (let i = 0; i < this.summaryRows.length; i++) {
       const row = this.summaryRows[i];

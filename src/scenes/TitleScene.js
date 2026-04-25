@@ -1,6 +1,7 @@
 import { WORLD, COLORS, NPC_PALETTE } from '../config.js';
 import { Audio } from '../util/audio.js';
 import { makePlaceholderTextures, SHIP_DESIGNS } from '../util/placeholderArt.js';
+import { UPGRADE_DEFS, buyUpgrade, loadOreBank, loadUpgrades, upgradeCost } from '../util/progression.js';
 
 const NAME_KEY = 'oredrift.playerName';
 const DESIGN_KEY = 'oredrift.shipDesign';
@@ -13,6 +14,8 @@ const AI_MIN = 0;
 // just reuses a palette color. Large values will cost frame rate, but that's
 // the player's call.
 const AI_DEFAULT = 5;
+const SHOP_W = 300;
+const SHOP_H = 204;
 
 export class TitleScene extends Phaser.Scene {
   constructor() { super('Title'); }
@@ -25,6 +28,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   create() {
+    document.body.classList.remove('in-game');
     const cam = this.cameras.main;
     cam.setBackgroundColor('#05060c');
 
@@ -42,6 +46,9 @@ export class TitleScene extends Phaser.Scene {
       fontSize: '16px',
       color: '#ffd66b',
     }).setOrigin(0.5);
+
+    this.oreBank = loadOreBank();
+    this.upgrades = loadUpgrades();
 
     this.shipPrompt = this.add.text(0, 0, 'SHIP TYPE', {
       fontFamily: 'ui-monospace, monospace',
@@ -97,6 +104,8 @@ export class TitleScene extends Phaser.Scene {
     this.aiPlus = this.add.text(0, 0, '+', btnStyle).setOrigin(0.5)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this._setAiCount(this.aiCount + 1));
+
+    this._buildShop();
 
     this.prompt = this.add.text(0, 0, 'SHIP NAME', {
       fontFamily: 'ui-monospace, monospace',
@@ -224,6 +233,7 @@ export class TitleScene extends Phaser.Scene {
       playerName: name,
       playerDesignKey: this.selectedDesignKey,
       aiCount: this.aiCount,
+      playerUpgrades: this.upgrades,
     });
   }
 
@@ -239,6 +249,88 @@ export class TitleScene extends Phaser.Scene {
     return String(s).replace(/[&<>"']/g, (c) => (
       { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
     ));
+  }
+
+  _buildShop() {
+    this.shop = this.add.container(0, 0).setDepth(20);
+    this.shopBg = this.add.rectangle(0, 0, SHOP_W, SHOP_H, 0x081126, 0.92)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0x3a4a78, 0.9);
+    this.shopTitle = this.add.text(14, 12, 'UPGRADE SHOP', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '12px',
+      fontStyle: 'bold',
+      color: '#ffd66b',
+      letterSpacing: 2,
+    });
+    this.bankText = this.add.text(SHOP_W - 14, 12, '', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '12px',
+      fontStyle: 'bold',
+      color: '#7df9ff',
+    }).setOrigin(1, 0);
+    this.shop.add([this.shopBg, this.shopTitle, this.bankText]);
+
+    this.shopRows = UPGRADE_DEFS.map((def, i) => {
+      const y = 42 + i * 38;
+      const name = this.add.text(14, y, '', {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '13px',
+        fontStyle: 'bold',
+        color: '#cfe4ff',
+      });
+      const desc = this.add.text(14, y + 16, def.desc, {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '10px',
+        color: '#8ea1c7',
+      });
+      const buy = this.add.text(SHOP_W - 14, y + 7, '', {
+        fontFamily: 'ui-monospace, monospace',
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: '#05060c',
+        backgroundColor: '#7df9ff',
+        padding: { left: 8, right: 8, top: 4, bottom: 4 },
+      }).setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
+      buy.on('pointerdown', () => this._buyUpgrade(def.key));
+      this.shop.add([name, desc, buy]);
+      return { def, name, desc, buy };
+    });
+    this._refreshShop();
+  }
+
+  _buyUpgrade(key) {
+    const result = buyUpgrade(key);
+    if (!result.ok) {
+      Audio.attachToPhaser(this);
+      Audio.unlock();
+      Audio.playUiClick();
+      return;
+    }
+    this.oreBank = result.bank;
+    this.upgrades = result.upgrades;
+    this._refreshShop();
+    Audio.attachToPhaser(this);
+    Audio.unlock();
+    Audio.playPickup();
+  }
+
+  _refreshShop() {
+    this.bankText.setText(`${this.oreBank} ORE`);
+    for (const row of this.shopRows) {
+      const level = this.upgrades[row.def.key] || 0;
+      const cost = upgradeCost(row.def, level);
+      row.name.setText(`${row.def.label} ${level}/${row.def.maxLevel}`);
+      if (cost === null) {
+        row.buy.setText('MAX');
+        row.buy.setAlpha(0.5);
+        row.buy.disableInteractive();
+      } else {
+        row.buy.setText(String(cost));
+        row.buy.setAlpha(this.oreBank >= cost ? 1 : 0.35);
+        row.buy.setInteractive({ useHandCursor: true });
+      }
+    }
   }
 
   _layout() {
@@ -271,6 +363,16 @@ export class TitleScene extends Phaser.Scene {
     // name prompt + DOM form below the AI picker
     this.prompt.setPosition(cx, cy + 45);
     this.form.setPosition(cx, cy + 115);
+
+    const shopScale = Math.min(1, (cam.width - 32) / SHOP_W, (cam.height - 32) / SHOP_H);
+    const shopW = SHOP_W * shopScale;
+    const shopH = SHOP_H * shopScale;
+    const desiredX = cam.width >= 920 ? cx + 230 : cx - shopW / 2;
+    const desiredY = cam.width >= 920 ? cy - 90 : cy + 160;
+    const x = Phaser.Math.Clamp(desiredX, 16, cam.width - shopW - 16);
+    const y = Phaser.Math.Clamp(desiredY, 16, cam.height - shopH - 16);
+    this.shop.setPosition(x, y);
+    this.shop.setScale(shopScale);
 
     // redraw selection ring at the new position
     if (this.thumbs.length) this._refreshSelection();

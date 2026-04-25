@@ -6,6 +6,7 @@ import { LocalInputController } from '../controllers/LocalInputController.js';
 import { NpcController, NPC_PERSONALITIES, npcPersonalityByIndex } from '../controllers/NpcController.js';
 import { makePlaceholderTextures, SHIP_DESIGNS } from '../util/placeholderArt.js';
 import { Audio } from '../util/audio.js';
+import { addOreBank, loadUpgrades, playerStatMultipliers } from '../util/progression.js';
 
 const DEATH_CLOUD = {
   radiusBase: 80,
@@ -30,6 +31,7 @@ export class GameScene extends Phaser.Scene {
   create(data = {}) {
     this.playerName = data.playerName || this.playerName || 'PILOT';
     this.playerDesignKey = data.playerDesignKey || this.playerDesignKey || SHIP_DESIGNS[0].key;
+    this.playerUpgrades = data.playerUpgrades || loadUpgrades();
     // aiCount is chosen on the title screen; fall back to the config default
     // if the scene was started without one (e.g. dev hot-restart).
     this.aiCount = Number.isFinite(data.aiCount)
@@ -130,7 +132,7 @@ export class GameScene extends Phaser.Scene {
       ship.laserTarget = target;
       ship.drawLaser(target);
       if (target) {
-        const dead = target.damage(SHIP.laserDps * dt);
+        const dead = target.damage((ship.stats?.laserDps ?? SHIP.laserDps) * dt);
         // visible impact flash at the meteor edge facing the shooting ship,
         // throttled so it reads as punctuated "chunks flying" not a lightshow
         ship._lastImpactFxAt = ship._lastImpactFxAt || 0;
@@ -205,6 +207,7 @@ export class GameScene extends Phaser.Scene {
       isPlayer: true,
       designKey: design.key,
       accentColor: design.accent,
+      statMultipliers: playerStatMultipliers(this.playerUpgrades),
     });
     this.player.displayName = this.playerName;
     this.player.setController(new LocalInputController(this));
@@ -600,6 +603,8 @@ export class GameScene extends Phaser.Scene {
     this.runStats.survivedMs = this.time.now - this.runStats.startedAt;
     this.runStats.finalOre = this.player?.ore ?? 0;
     this.runStats.finalRank = this._playerRank();
+    this.runStats.persistentOreEarned = Math.max(0, Math.floor(this.runStats.finalOre));
+    this.runStats.oreBank = addOreBank(this.runStats.persistentOreEarned);
     return this.runStats;
   }
 

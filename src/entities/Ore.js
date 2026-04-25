@@ -45,7 +45,7 @@ export class Ore extends Phaser.Physics.Arcade.Sprite {
       if (!s.alive) continue;
       if (s._noPickupUntil && now < s._noPickupUntil) continue;
       const sc = s.scaleX || 1;
-      const range = SHIP.magnetRadius * Math.pow(sc, 1.5);
+      const range = (s.stats?.magnetRadius ?? SHIP.magnetRadius) * Math.pow(sc, 1.5);
       const d = Phaser.Math.Distance.Between(this.x, this.y, s.x, s.y);
       if (d >= range) continue;
       if (nearest === null || d / range < nearestD / nearestRange) {

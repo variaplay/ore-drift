@@ -5,7 +5,13 @@ import { Audio } from '../util/audio.js';
 // Steering intent comes from a Controller — the ship itself doesn't know
 // whether it's driven by a human, AI, or (later) a remote network peer.
 export class Ship extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y, { isPlayer = false, colorIndex = null, accentColor = null, designKey = null } = {}) {
+  constructor(scene, x, y, {
+    isPlayer = false,
+    colorIndex = null,
+    accentColor = null,
+    designKey = null,
+    statMultipliers = null,
+  } = {}) {
     // Player can pick a silhouette from SHIP_DESIGNS; if none selected, fall
     // back to the legacy ship_player texture (which is an alias for 'arrow').
     // NPCs keep per-palette colored variants of the classic hull.
@@ -32,8 +38,15 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     // color used for thrust particles & laser — prefer explicit accentColor
     // so player ships can match their selected design's signature color
     this.accentColor = accentColor ?? (isPlayer ? COLORS.laserPlayer : COLORS.laserNpc);
+    const mult = statMultipliers || {};
+    this.stats = {
+      fuelMax: SHIP.fuelMax * (mult.fuelMax ?? 1),
+      boostDrain: SHIP.boostDrain * (mult.boostDrain ?? 1),
+      magnetRadius: SHIP.magnetRadius * (mult.magnetRadius ?? 1),
+      laserDps: SHIP.laserDps * (mult.laserDps ?? 1),
+    };
     this.heading = -Math.PI / 2;
-    this.fuel = SHIP.fuelMax;
+    this.fuel = this.stats.fuelMax;
     this.ore = 0;
     this.alive = true;
     this.controller = null;
@@ -212,7 +225,7 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     const speed = hasFuel ? (boosting ? SHIP.boostSpeed : SHIP.baseSpeed) : SHIP.baseSpeed * 0.3;
     this.setVelocity(Math.cos(this.heading) * speed, Math.sin(this.heading) * speed);
 
-    this.fuel = Math.max(0, this.fuel - (boosting ? SHIP.boostDrain : SHIP.fuelDrain) * dt);
+    this.fuel = Math.max(0, this.fuel - (boosting ? this.stats.boostDrain : SHIP.fuelDrain) * dt);
     // spawn thrust particles behind the hull, not at center — followOffset is
     // world-space, so rotate the offset with the current heading each frame
     const rearDist = SHIP.radius * (this.scaleX || 1) + 2;
@@ -241,7 +254,7 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
 
   addOre(amount) {
     this.ore += amount;
-    this.fuel = Math.min(SHIP.fuelMax, this.fuel + amount * SHIP.fuelPerOre);
+    this.fuel = Math.min(this.stats.fuelMax, this.fuel + amount * SHIP.fuelPerOre);
   }
 
   destroy(fromScene) {
