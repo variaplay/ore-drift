@@ -23,7 +23,7 @@ const LEADERBOARD = {
 
 const SUMMARY = {
   width: 340,
-  height: 260,
+  height: 290,
   bgColor: 0x081126,
   borderColor: 0xffd66b,
   padX: 28,
@@ -175,7 +175,7 @@ export class HUDScene extends Phaser.Scene {
       this.summaryRows.push({ label, value });
     }
 
-    this.summaryRestart = this.add.text(0, 104, 'TAP TO LAUNCH AGAIN', {
+    this.summaryRestart = this.add.text(0, 116, 'TAP TO LAUNCH AGAIN', {
       fontFamily: 'ui-monospace, monospace',
       fontSize: '13px',
       fontStyle: 'bold',
