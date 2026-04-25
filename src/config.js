@@ -4,8 +4,8 @@ export const WORLD = {
 };
 
 export const SHIP = {
-  baseSpeed: 180,
-  boostSpeed: 340,
+  baseSpeed: 140,
+  boostSpeed: 260,
   turnRate: 2.8,
   radius: 14,
   fuelMax: 100,
