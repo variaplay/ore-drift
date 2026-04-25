@@ -69,6 +69,11 @@ export const NPC = {
   count: 5,
   seekJitter: 0.35,
   retargetMs: 1500,
+  // separation: when another ship is within avoidRadius, blend a repulsion
+  // vector into the seek heading. Strength scales how strongly avoidance
+  // overrides seeking when ships are touching (0 = no avoidance, 1 = pure flee).
+  avoidRadius: 90,
+  avoidStrength: 1.4,
 };
 
 // Distinct hull colors so each rival reads individually on the map & in combat.

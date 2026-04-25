@@ -156,6 +156,29 @@ export class NpcController extends Controller {
       heading = Math.atan2(point.y - ship.y, point.x - ship.x) + this.jitter;
     }
 
+    // Separation: blend in repulsion from any nearby ship so rivals don't
+    // pile onto the same rock. Falloff is linear in (avoidRadius - dist).
+    let seekX = Math.cos(heading);
+    let seekY = Math.sin(heading);
+    let avoidX = 0;
+    let avoidY = 0;
+    for (const other of this.scene.ships) {
+      if (other === ship || !other.alive) continue;
+      const dx = ship.x - other.x;
+      const dy = ship.y - other.y;
+      const d2 = dx * dx + dy * dy;
+      const r = NPC.avoidRadius;
+      if (d2 >= r * r || d2 < 0.01) continue;
+      const d = Math.sqrt(d2);
+      const w = (r - d) / r; // 0 at edge, 1 at contact
+      avoidX += (dx / d) * w;
+      avoidY += (dy / d) * w;
+    }
+    if (avoidX !== 0 || avoidY !== 0) {
+      const k = NPC.avoidStrength;
+      heading = Math.atan2(seekY + avoidY * k, seekX + avoidX * k);
+    }
+
     // occasional boost when far from target and has fuel
     if (now > this.boostUntil && Math.random() < this.profile.boostChance && ship.fuel > this.profile.boostFuelGate) {
       this.boostUntil = now + 800 + Math.random() * 600;
