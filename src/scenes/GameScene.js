@@ -5,6 +5,7 @@ import { Ore } from '../entities/Ore.js';
 import { LocalInputController } from '../controllers/LocalInputController.js';
 import { NpcController, NPC_PERSONALITIES, npcPersonalityByIndex } from '../controllers/NpcController.js';
 import { makePlaceholderTextures, SHIP_DESIGNS } from '../util/placeholderArt.js';
+import { Nebula, addStarfield } from '../util/backdrop.js';
 import { Audio } from '../util/audio.js';
 import { addOreBank, loadUpgrades, playerStatMultipliers } from '../util/progression.js';
 
@@ -41,12 +42,23 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(-WORLD.size / 2, -WORLD.size / 2, WORLD.size, WORLD.size);
     this.cameras.main.setBackgroundColor('#05060c');
 
+    this.nebula = new Nebula(this);
     this._drawStarfield();
     this._drawBoundary();
+    this._createFx();
+    this._setupPostFx();
 
     this.meteors = this.physics.add.group({ classType: Meteor });
     this.ores = this.physics.add.group({ classType: Ore });
     this.ships = [];
+    // music keeps playing across restarts (HUD restarts this scene directly,
+    // skipping Title's startMusic call); startMusic is a no-op if running
+    Audio.setMusicIntensity(0.5);
+    Audio.startMusic();
+    // scene restarts reuse this instance, so swap listeners instead of stacking
+    this.events.off('pause', this._onPause, this);
+    this.events.on('pause', this._onPause, this);
+    this.events.once('shutdown', () => Audio.stopLoops());
     this.deathClouds = [];
     this._npcSerial = 0;
     this.runStats = {
@@ -77,6 +89,7 @@ export class GameScene extends Phaser.Scene {
       if (ship.isPlayer) {
         this.runStats.oreCollected += ore.value;
         Audio.playPickup();
+        this.pickupFx.emitParticleAt(ore.x, ore.y, 2);
       }
       ore.destroy();
     });
@@ -112,6 +125,14 @@ export class GameScene extends Phaser.Scene {
   update(_time, deltaMs) {
     const dt = deltaMs / 1000;
     if (this.player?.alive) this.runStats.survivedMs = this.time.now - this.runStats.startedAt;
+    const cam = this.cameras.main;
+    this.nebula.update(cam.scrollX, cam.scrollY, _time);
+    // ease the camera out a touch while boosting — sells the speed and
+    // shows a little more of what's ahead
+    const targetZoom = this.player?.alive && this.player._wasBoosting ? 0.92 : 1;
+    cam.setZoom(cam.zoom + (targetZoom - cam.zoom) * Math.min(1, dt * 3));
+    Audio.setEngine(!!this.player?.alive, !!this.player?._wasBoosting);
+    let playerMining = false;
 
     // drive all ships through their controllers
     for (const ship of this.ships) ship.tick(dt);
@@ -140,22 +161,22 @@ export class GameScene extends Phaser.Scene {
           ship._lastImpactFxAt = _time;
           this._spawnLaserImpactFx(target, ship);
         }
-        // player-only laser crackle, rate-limited so it doesn't become a drone
-        if (ship.isPlayer) {
-          this._lastLaserTick = this._lastLaserTick || 0;
-          if (_time - this._lastLaserTick > 90) {
-            Audio.playLaserTick();
-            this._lastLaserTick = _time;
-          }
-        }
+        if (ship.isPlayer) playerMining = true;
         if (dead) {
-          if (ship.isPlayer || Phaser.Math.Distance.Squared(this.player.x, this.player.y, target.x, target.y) < 500 * 500) {
-            Audio.playShatter();
+          const { pan, vol } = this._spatial(target.x, target.y, 650);
+          if (ship.isPlayer || vol > 0) {
+            const opts = { pan, vol: ship.isPlayer ? 1 : vol };
+            if (target.tier === 'crystal') Audio.playCrystalShatter(opts);
+            else if (target.tier !== 'mother') {
+              const size = Phaser.Math.Clamp((target.radius - METEOR.minR) / (METEOR.maxR - METEOR.minR), 0, 1);
+              Audio.playShatter({ ...opts, size });
+            }
           }
           this._shatterMeteor(target, ship);
         }
       }
     }
+    Audio.setLaser(playerMining && this.player.alive);
 
     // ship-vs-ship ram detection: pairwise circle test each frame
     this._resolveShipRams();
@@ -196,6 +217,7 @@ export class GameScene extends Phaser.Scene {
     m.setVelocity(-Math.cos(angle) * 30, -Math.sin(angle) * 30);
     this.meteors.add(m);
     Audio.playMotherIncoming?.();
+    Audio.setMusicIntensity(1);
     this.events.emit('mother-spawned');
   }
 
@@ -352,7 +374,8 @@ export class GameScene extends Phaser.Scene {
     this._spawnDeathCloud(ship, dropped);
     // optional-chain guard: if the player's browser has a stale cached
     // audio.js from before this method existed, don't crash the game loop
-    Audio.playExplosion?.();
+    const { pan, vol } = this._spatial(ship.x, ship.y, 1100);
+    Audio.playExplosion?.({ pan, vol: ship.isPlayer ? 1 : Math.max(0.15, vol) });
     // shake the camera proportional to proximity — bigger nearby deaths feel weightier
     const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, ship.x, ship.y);
     const near = Phaser.Math.Clamp(1 - d / 700, 0, 1);
@@ -361,6 +384,7 @@ export class GameScene extends Phaser.Scene {
     if (ship.isPlayer) {
       Audio.playDeath();
       Audio.stopMusic();
+      Audio.stopLoops();
       this.cameras.main.shake(500, 0.025);
       this.cameras.main.flash(220, 255, 120, 140);
       this._finalizeRunStats('ram');
@@ -497,6 +521,7 @@ export class GameScene extends Phaser.Scene {
     const toward = miner ? Math.atan2(miner.y - meteor.y, miner.x - meteor.x) : null;
     const yield_ = meteor.oreYield();
     const R = meteor.radius;
+    this._spawnShatterFx(meteor, miner);
     for (let i = 0; i < yield_; i++) {
       // spawn across the meteor's disk (sqrt for uniform area distribution)
       // so chunks are visually distinct instead of piling up at the center
@@ -522,7 +547,8 @@ export class GameScene extends Phaser.Scene {
         this.meteors.add(frag);
       }
       // big punchy kaboom for the event
-      Audio.playExplosion?.();
+      Audio.playExplosion?.(this._spatial(meteor.x, meteor.y, 1400));
+      Audio.setMusicIntensity(0.5);
       this.cameras.main.shake(320, 0.012);
     } else if (meteor.radius > METEOR.minR * 2) {
       // normal/crystal: spawn a single smaller fragment
@@ -544,13 +570,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   _drawBoundary() {
-    // circular edge of the playable world — ships can't cross this
+    // circular edge of the playable world — ships can't cross this. Layered
+    // strokes read as a soft energy barrier rather than a plain line.
     const g = this.add.graphics();
     g.setDepth(-6);
-    g.lineStyle(2, 0x3a4a78, 0.7);
-    g.strokeCircle(0, 0, WORLD.size / 2);
-    g.lineStyle(10, 0x3a4a78, 0.12);
-    g.strokeCircle(0, 0, WORLD.size / 2);
+    g.setBlendMode(Phaser.BlendModes.ADD);
+    const R = WORLD.size / 2;
+    g.lineStyle(40, 0x3a4a78, 0.05);
+    g.strokeCircle(0, 0, R + 14);
+    g.lineStyle(14, 0x4a64b0, 0.12);
+    g.strokeCircle(0, 0, R + 4);
+    g.lineStyle(2, 0x7f9cff, 0.7);
+    g.strokeCircle(0, 0, R);
   }
 
   _clampToWorld(obj, bodyRadius = 0) {
@@ -574,25 +605,116 @@ export class GameScene extends Phaser.Scene {
   }
 
   _drawStarfield() {
-    // three parallax layers of static stars
-    const { size } = WORLD;
-    for (let layer = 0; layer < WORLD.starLayers; layer++) {
-      const g = this.add.graphics();
-      g.setDepth(-10 + layer);
-      g.fillStyle(COLORS.star, 0.3 + layer * 0.2);
-      const count = 200 - layer * 50;
-      for (let i = 0; i < count; i++) {
-        const x = Phaser.Math.Between(-size / 2, size / 2);
-        const y = Phaser.Math.Between(-size / 2, size / 2);
-        g.fillRect(x, y, 1 + layer, 1 + layer);
-      }
-      g.setScrollFactor(0.3 + layer * 0.2);
+    // three parallax layers of tinted stars + twinkling bright ones
+    const half = WORLD.size / 2;
+    addStarfield(this, { layers: WORLD.starLayers, halfW: half, halfH: half, twinkles: 220 });
+  }
+
+  _setupPostFx() {
+    // Soft bloom makes lasers, thrust and glowing rocks actually glow.
+    // Desktop WebGL only — it's a full-screen multi-pass blur that costs
+    // too much on low-end phones.
+    const cam = this.cameras.main;
+    if (this.renderer.type !== Phaser.WEBGL || !cam.postFX) return;
+    if (!this.sys.game.device.os.desktop) return;
+    this._bloom = cam.postFX.addBloom(0xffffff, 1, 1, 1.1, 0.9, 4);
+  }
+
+  _createFx() {
+    // pooled emitters reused for every shatter / pickup — cheaper than
+    // spinning up a new emitter per event
+    this.debrisFx = this.add.particles(0, 0, 'chunk', {
+      emitting: false,
+      speed: { min: 40, max: 170 },
+      lifespan: { min: 500, max: 1100 },
+      scale: { start: 1.6, end: 0.4 },
+      rotate: { min: 0, max: 360 },
+      alpha: { start: 1, end: 0 },
+    }).setDepth(6);
+    this.dustFx = this.add.particles(0, 0, 'glow', {
+      emitting: false,
+      speed: { min: 8, max: 45 },
+      lifespan: { min: 600, max: 1000 },
+      scale: { start: 0.6, end: 1.8 },
+      alpha: { start: 0.28, end: 0 },
+      blendMode: 'ADD',
+    }).setDepth(5);
+    this.shardFx = this.add.particles(0, 0, 'spark', {
+      emitting: false,
+      speed: { min: 80, max: 240 },
+      lifespan: { min: 300, max: 650 },
+      scale: { start: 1.3, end: 0 },
+      alpha: { start: 1, end: 0 },
+      blendMode: 'ADD',
+    }).setDepth(6);
+    this.pickupFx = this.add.particles(0, 0, 'glow', {
+      emitting: false,
+      speed: { min: 20, max: 70 },
+      lifespan: 280,
+      scale: { start: 0.35, end: 0 },
+      alpha: { start: 0.9, end: 0 },
+      tint: COLORS.ore,
+      blendMode: 'ADD',
+    }).setDepth(6);
+  }
+
+  _spawnShatterFx(meteor, miner) {
+    const { x, y, radius: R } = meteor;
+    const tint = meteor._baseTint();
+    const big = R / 32;
+    this.debrisFx.setParticleTint(tint);
+    this.debrisFx.explode(Math.round(8 + big * 14), x, y);
+    this.dustFx.setParticleTint(tint);
+    this.dustFx.explode(Math.round(4 + big * 6), x, y);
+    if (meteor.tier !== 'normal') {
+      this.shardFx.setParticleTint(meteor._hotTint());
+      this.shardFx.explode(meteor.tier === 'mother' ? 60 : 24, x, y);
     }
+
+    // bright flash + expanding ring at the break point
+    const g = this.add.graphics().setDepth(6).setBlendMode(Phaser.BlendModes.ADD);
+    const state = { r: R * 0.5, a: 1 };
+    this.tweens.add({
+      targets: state,
+      r: R * 1.8,
+      a: 0,
+      duration: 360,
+      ease: 'Cubic.easeOut',
+      onUpdate: () => {
+        g.clear();
+        g.fillStyle(0xffffff, state.a * 0.25);
+        g.fillCircle(x, y, state.r * 0.6);
+        g.lineStyle(3 * state.a + 1, tint, state.a * 0.8);
+        g.strokeCircle(x, y, state.r);
+      },
+      onComplete: () => g.destroy(),
+    });
+
+    // tiny kick when the player breaks a rock on screen — scaled by size
+    if (miner?.isPlayer && meteor.tier !== 'mother') {
+      this.cameras.main.shake(90, 0.0015 + big * 0.002);
+    }
+  }
+
+  // stereo pan + distance falloff for a world-space sound source
+  _spatial(x, y, range) {
+    if (!this.player) return { pan: 0, vol: 1 };
+    const dx = x - this.player.x;
+    const d = Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y);
+    return {
+      pan: Phaser.Math.Clamp(dx / 600, -0.8, 0.8),
+      vol: Phaser.Math.Clamp(1 - d / range, 0, 1),
+    };
+  }
+
+  _onPause() {
+    Audio.stopLoops();
   }
 
   onPlayerOutOfFuel() {
     Audio.playDeath();
     Audio.stopMusic();
+    Audio.stopLoops();
     this._finalizeRunStats('fuel');
     this.events.emit('player-dead', 'fuel');
   }

@@ -95,7 +95,9 @@ export const COLORS = {
   hullNpc: 0xff7bd1,
   laserPlayer: 0x9ff7ff,
   laserNpc: 0xff9ad4,
-  meteor: 0x6b7ea8,
+  // brighter than the old flat fill because the rock texture is now shaded
+  // (multiplying by the shade darkens the average tone)
+  meteor: 0x8a9cc6,
   meteorHot: 0xd98a3d,
   // Crystals were mint-teal; shifted to violet so they read as rare space
   // crystals rather than candy, and stay distinct from the cyan player laser.

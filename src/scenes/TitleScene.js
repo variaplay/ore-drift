@@ -1,6 +1,7 @@
 import { WORLD, COLORS, NPC_PALETTE } from '../config.js';
 import { Audio } from '../util/audio.js';
-import { makePlaceholderTextures, SHIP_DESIGNS } from '../util/placeholderArt.js';
+import { makePlaceholderTextures, SHIP_DESIGNS, METEOR_VARIANTS } from '../util/placeholderArt.js';
+import { Nebula, addStarfield } from '../util/backdrop.js';
 import { UPGRADE_DEFS, buyUpgrade, loadOreBank, loadUpgrades, upgradeCost } from '../util/progression.js';
 
 const NAME_KEY = 'oredrift.playerName';
@@ -32,7 +33,9 @@ export class TitleScene extends Phaser.Scene {
     const cam = this.cameras.main;
     cam.setBackgroundColor('#05060c');
 
+    this.nebula = new Nebula(this);
     this._drawStarfield();
+    this._spawnDriftRocks();
 
     this.title = this.add.text(0, 0, 'ORE DRIFT', {
       fontFamily: 'ui-monospace, monospace',
@@ -40,6 +43,18 @@ export class TitleScene extends Phaser.Scene {
       color: '#7df9ff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
+    // neon glow that breathes slowly (WebGL only; canvas renderer has no FX)
+    if (this.title.preFX) {
+      const glow = this.title.preFX.addGlow(0x2c9fff, 3, 0, false, 0.1, 14);
+      this.tweens.add({
+        targets: glow,
+        outerStrength: 6,
+        duration: 1800,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
 
     this.subtitle = this.add.text(0, 0, 'mine more ore than the rivals', {
       fontFamily: 'ui-monospace, monospace',
@@ -312,7 +327,7 @@ export class TitleScene extends Phaser.Scene {
     this._refreshShop();
     Audio.attachToPhaser(this);
     Audio.unlock();
-    Audio.playPickup();
+    Audio.playPurchase();
   }
 
   _refreshShop() {
@@ -379,17 +394,55 @@ export class TitleScene extends Phaser.Scene {
   }
 
   _drawStarfield() {
-    // match the in-game starfield so the transition into Game feels continuous
-    const w = this.scale.width;
-    const h = this.scale.height;
-    for (let layer = 0; layer < WORLD.starLayers; layer++) {
-      const g = this.add.graphics();
-      g.setDepth(-10 + layer);
-      g.fillStyle(COLORS.star, 0.3 + layer * 0.2);
-      const count = 200 - layer * 50;
-      for (let i = 0; i < count; i++) {
-        g.fillRect(Phaser.Math.Between(0, w), Phaser.Math.Between(0, h), 1 + layer, 1 + layer);
-      }
+    // match the in-game starfield so the transition into Game feels continuous.
+    // Scatter a bit past the larger screen dimension so modest resizes
+    // don't reveal empty edges.
+    const span = Math.max(this.scale.width, this.scale.height) * 0.6;
+    addStarfield(this, {
+      layers: WORLD.starLayers,
+      cx: this.scale.width / 2,
+      cy: this.scale.height / 2,
+      halfW: span,
+      halfH: span,
+      parallax: false,
+      twinkles: 40,
+    });
+  }
+
+  _spawnDriftRocks() {
+    // a few dim meteors tumbling behind the menu give the scene depth
+    this.driftRocks = [];
+    for (let i = 0; i < 8; i++) {
+      // start in the left/right thirds so the menu column begins clear;
+      // kept dim enough that a rock passing behind the UI never hides it
+      const side = i % 2 === 0 ? 0 : 0.7;
+      const rock = this.add.image(
+        (side + Math.random() * 0.3) * this.scale.width,
+        Phaser.Math.Between(0, this.scale.height),
+        `meteor_${i % METEOR_VARIANTS}`,
+      ).setDepth(-5)
+        .setTint(COLORS.meteor)
+        .setAlpha(0.18 + Math.random() * 0.14)
+        .setScale(0.4 + Math.random() * 1.0);
+      rock.vx = Phaser.Math.FloatBetween(-9, 9);
+      rock.vy = Phaser.Math.FloatBetween(-6, 6);
+      rock.spin = Phaser.Math.FloatBetween(-0.3, 0.3);
+      this.driftRocks.push(rock);
+    }
+  }
+
+  update(time, deltaMs) {
+    const dt = deltaMs / 1000;
+    this.nebula.update(0, 0, time);
+    const w = this.scale.width, h = this.scale.height;
+    for (const r of this.driftRocks) {
+      r.x += r.vx * dt;
+      r.y += r.vy * dt;
+      r.rotation += r.spin * dt;
+      // wrap with a margin so rocks slide fully off before reappearing
+      const m = 80 * r.scaleX;
+      if (r.x < -m) r.x = w + m; else if (r.x > w + m) r.x = -m;
+      if (r.y < -m) r.y = h + m; else if (r.y > h + m) r.y = -m;
     }
   }
 }

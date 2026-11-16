@@ -31,6 +31,8 @@ export class Ore extends Phaser.Physics.Arcade.Sprite {
     this.isDeathCloudOre = !!options.deathCloud;
     this.setTint(options.tint ?? 0xffd66b);
     if (options.scale) this.setScale(options.scale);
+    // slow tumble so loose ore glints instead of sitting static
+    this.setAngularVelocity(Phaser.Math.FloatBetween(-140, 140));
   }
 
   tickMagnet(ships) {
@@ -68,6 +70,9 @@ export class Ore extends Phaser.Physics.Arcade.Sprite {
         this.body.velocity.y *= ORE.maxSpeed / vmag;
       }
     }
-    if (this.scene.time.now - this.bornAt > this.lifetime) this.destroy();
+    const left = this.lifetime - (now - this.bornAt);
+    if (left <= 0) { this.destroy(); return; }
+    // blink out over the last 2s so expiring ore doesn't just pop
+    if (left < 2000) this.setAlpha((left / 2000) * (0.55 + 0.45 * Math.sin(now / 60)));
   }
 }

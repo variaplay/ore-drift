@@ -11,7 +11,7 @@ All sprites are top-down, facing **up** (north). Transparent background.
 | `ship_player.png`  | 32×32  | Main color should read as cyan/teal                    |
 | `ship_npc.png`     | 32×32  | Rival color (pink/magenta default)                     |
 | `meteor.png`       | 64×64  | Pure white-ish; game tints it per meteor (damage heat) |
-| `ore.png`          | 10×10  | Gold chip, bright center                               |
+| `ore.png`          | 16×16  | Gold chip, bright center, soft glow around it          |
 | `spark.png`        | 6×6    | Additive thrust particle, white                        |
 
 ## PixelLab prompt hints
@@ -19,7 +19,7 @@ All sprites are top-down, facing **up** (north). Transparent background.
 - "top-down 2D pixel art, 32x32, retro arcade, 8-bit palette"
 - Ships: "small mining starship, pointing up, glowing thruster at tail"
 - Meteor: "64x64 asteroid, chunky pixels, grayscale so it can be tinted"
-- Ore: "10x10 shiny ore crystal, yellow, single frame"
+- Ore: "16x16 shiny ore crystal, yellow, soft glow, single frame"
 
 ## Wiring real sprites
 

@@ -118,8 +118,15 @@ WebSocket messages; no changes to `Ship`, physics, rendering, or scene.
   (`src/util/placeholderArt.js`) so the game runs with zero assets.
   Real art drops into `assets/sprites/` as PNGs — see the README
   there for sizes and PixelLab prompt hints.
-- **VFX:** additive particle thrusters, 2-layer laser beam
-  (thin bright core + soft glow), parallax starfield (3 layers).
+- **VFX:** always-on engine trail + boost flame, 3-layer additive
+  laser beam, rock debris/dust bursts on shatter, tiling nebula with
+  parallax and twinkling stars, screen vignette (pulses red at low
+  fuel), camera bloom on desktop WebGL, slight zoom-out while boosting.
+- **Audio:** all synthesized in `src/util/audio.js` — a sequenced
+  A-minor soundtrack (pad, bass, arp, lead, drums) that intensifies
+  during mother-meteor events, continuous engine and laser loops,
+  positional (panned, distance-attenuated) shatter/explosion SFX, and a
+  pickup chime that climbs a pentatonic scale on chained pickups.
 
 ## 11. Technical architecture
 

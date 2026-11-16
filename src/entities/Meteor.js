@@ -1,5 +1,5 @@
 import { METEOR, MOTHER_METEOR, COLORS } from '../config.js';
-import { METEOR_VARIANTS } from '../util/placeholderArt.js';
+import { METEOR_VARIANTS, CRYSTAL_VARIANTS } from '../util/placeholderArt.js';
 
 // Per-tier visual and stat parameters. Keeps the tier-specific branches
 // in the constructor readable and easy to extend.
@@ -22,8 +22,11 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
     // pick one of the irregular variant textures so neighbors don't look
     // identical. Falls back to the legacy 'meteor' key if a variant doesn't
     // exist (e.g. if preload() was customized to load real PNGs).
-    const variant = Phaser.Math.Between(0, METEOR_VARIANTS - 1);
-    const texKey = scene.textures.exists(`meteor_${variant}`) ? `meteor_${variant}` : 'meteor';
+    // Crystals get faceted gem textures and the mother gets the lava-veined rock.
+    let texKey = `meteor_${Phaser.Math.Between(0, METEOR_VARIANTS - 1)}`;
+    if (tier === 'crystal') texKey = `crystal_${Phaser.Math.Between(0, CRYSTAL_VARIANTS - 1)}`;
+    if (tier === 'mother') texKey = 'meteor_mother';
+    if (!scene.textures.exists(texKey)) texKey = 'meteor';
     super(scene, x, y, texKey);
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -80,11 +83,11 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
         tint: tp.base,
         frequency: tp.innerFreq,
       });
-      this.glowOuter = scene.add.particles(0, 0, 'spark', {
+      this.glowOuter = scene.add.particles(0, 0, 'glow', {
         follow: this,
         speed: { min: 4, max: 16 },
         lifespan: { min: 700, max: 1200 },
-        scale: { start: tp.outerScale, end: 0 },
+        scale: { start: tp.outerScale * 0.4, end: 0 },
         alpha: { start: 0.45, end: 0 },
         blendMode: 'ADD',
         tint: tp.base,
@@ -95,6 +98,7 @@ export class Meteor extends Phaser.Physics.Arcade.Sprite {
       // glance that this one is a high-value target
       this.halo = scene.add.graphics();
       this.halo.setDepth(-1);
+      this.halo.setBlendMode(Phaser.BlendModes.ADD);
     }
   }
 

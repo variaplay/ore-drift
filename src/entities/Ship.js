@@ -57,21 +57,40 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     this.setDrag(0.02);
     this.setMaxVelocity(SHIP.boostSpeed);
 
-    // thrust particles tinted to this ship's accent color
-    this.thrustFx = scene.add.particles(0, 0, 'spark', {
+    // Engine exhaust tinted to this ship's accent color. The trail is always
+    // on (the ship never stops); the flame layers in on boost. Particle size
+    // tracks ship scale so big late-game ships don't trail tiny specks.
+    const sizeOp = (base) => ({
+      onEmit: (p) => (p._s0 = base * (this.scaleX || 1)),
+      onUpdate: (p, _key, t) => p._s0 * (1 - t),
+    });
+    this.thrustFx = scene.add.particles(0, 0, 'glow', {
       follow: this,
-      speed: { min: 40, max: 90 },
-      lifespan: 260,
-      scale: { start: 0.9, end: 0 },
-      alpha: { start: 0.8, end: 0 },
+      speed: { min: 4, max: 18 },
+      lifespan: 420,
+      scale: sizeOp(0.32),
+      alpha: { start: 0.55, end: 0 },
       blendMode: 'ADD',
       tint: this.accentColor,
-      frequency: 40,
+      frequency: 28,
+    });
+    this.boostFx = scene.add.particles(0, 0, 'glow', {
+      follow: this,
+      speed: { min: 20, max: 60 },
+      lifespan: 300,
+      scale: sizeOp(0.6),
+      alpha: { start: 0.9, end: 0 },
+      blendMode: 'ADD',
+      tint: [0xffffff, this.accentColor, this.accentColor],
+      frequency: 12,
       emitting: false,
     });
+    this.thrustFx.setDepth(-0.5);
+    this.boostFx.setDepth(-0.4);
 
     this.laserGfx = scene.add.graphics();
     this.laserGfx.setDepth(5);
+    this.laserGfx.setBlendMode(Phaser.BlendModes.ADD);
 
     this._lastScaleApplied = -1;
     // brief invuln on spawn so rivals can't insta-ram fresh respawns
@@ -90,6 +109,7 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     this.alive = false;
     this.setVelocity(0, 0);
     this.thrustFx.emitting = false;
+    this.boostFx.emitting = false;
     this.laserGfx.clear();
     this._spawnDeathFx();
     // scale-up + fade, then hide — reads as an overpressure flash more than
@@ -207,6 +227,10 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
 
   tick(dt) {
     if (!this.alive || !this.controller) {
+      if (!this.alive) {
+        this.thrustFx.emitting = false;
+        this.boostFx.emitting = false;
+      }
       this._applyGrowthVisuals();
       return;
     }
@@ -229,10 +253,11 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     // spawn thrust particles behind the hull, not at center — followOffset is
     // world-space, so rotate the offset with the current heading each frame
     const rearDist = SHIP.radius * (this.scaleX || 1) + 2;
-    this.thrustFx.followOffset.x = -Math.cos(this.heading) * rearDist;
-    this.thrustFx.followOffset.y = -Math.sin(this.heading) * rearDist;
-    this.thrustFx.emitting = boosting;
-    this.thrustFx.frequency = boosting ? 18 : 40;
+    for (const fx of [this.thrustFx, this.boostFx]) {
+      fx.followOffset.x = -Math.cos(this.heading) * rearDist;
+      fx.followOffset.y = -Math.sin(this.heading) * rearDist;
+    }
+    this.boostFx.emitting = boosting;
     if (this.isPlayer && boosting && !this._wasBoosting) Audio.playBoostStart();
     this._wasBoosting = boosting;
 
@@ -246,10 +271,29 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
     this.laserGfx.clear();
     if (!targetMeteor) return;
     const color = this.accentColor;
-    this.laserGfx.lineStyle(2, color, 0.85);
-    this.laserGfx.lineBetween(this.x, this.y, targetMeteor.x, targetMeteor.y);
-    this.laserGfx.lineStyle(6, color, 0.2);
-    this.laserGfx.lineBetween(this.x, this.y, targetMeteor.x, targetMeteor.y);
+    const g = this.laserGfx;
+    // beam runs nose → rock surface (not rock center) so the impact point
+    // matches the hit flash GameScene spawns at the meteor's edge
+    const ang = Math.atan2(targetMeteor.y - this.y, targetMeteor.x - this.x);
+    const cos = Math.cos(ang), sin = Math.sin(ang);
+    const nose = SHIP.radius * 0.6 * (this.scaleX || 1);
+    const sx = this.x + cos * nose, sy = this.y + sin * nose;
+    const ex = targetMeteor.x - cos * targetMeteor.radius * 0.85;
+    const ey = targetMeteor.y - sin * targetMeteor.radius * 0.85;
+    // per-frame width flicker makes the beam feel energized
+    const f = 0.8 + Math.random() * 0.4;
+    g.lineStyle(11 * f, color, 0.1);
+    g.lineBetween(sx, sy, ex, ey);
+    g.lineStyle(5 * f, color, 0.35);
+    g.lineBetween(sx, sy, ex, ey);
+    g.lineStyle(1.6, 0xffffff, 0.9);
+    g.lineBetween(sx, sy, ex, ey);
+    g.fillStyle(color, 0.35);
+    g.fillCircle(ex, ey, 7 * f);
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(ex, ey, 2.5 * f);
+    g.fillStyle(color, 0.5);
+    g.fillCircle(sx, sy, 3 * f);
   }
 
   addOre(amount) {
@@ -259,6 +303,7 @@ export class Ship extends Phaser.Physics.Arcade.Sprite {
 
   destroy(fromScene) {
     this.thrustFx?.destroy();
+    this.boostFx?.destroy();
     this.laserGfx?.destroy();
     super.destroy(fromScene);
   }

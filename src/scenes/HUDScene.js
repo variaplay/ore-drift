@@ -21,6 +21,26 @@ const LEADERBOARD = {
   maxRows: 10,
 };
 
+const FUEL_GAUGE = {
+  x: 16,
+  y: 16,
+  width: 246,
+  height: 46,
+  segments: 24,
+  segW: 6,
+  segGap: 2,
+  barH: 10,
+  barX: 40,       // bar left edge, relative to the panel
+  barY: 25,
+  bgColor: 0x0a0f1f,
+  bgAlpha: 0.55,
+  borderColor: 0x3a4a78,
+  emptyColor: 0x16203a,
+  full: 0x7df9ff,
+  mid: 0xffc04d,
+  low: 0xff5a6a,
+};
+
 const SUMMARY = {
   width: 340,
   height: 290,
@@ -37,11 +57,14 @@ export class HUDScene extends Phaser.Scene {
     this.gameScene = this.scene.get('Game');
     const style = { fontFamily: 'ui-monospace, monospace', fontSize: '14px', color: '#cfe4ff' };
 
+    // screen-edge vignette (added first so it sits under every HUD element);
+    // a second red copy pulses in as fuel runs out
+    this.vignette = this.add.image(0, 0, 'vignette').setOrigin(0).setTint(0x000000).setAlpha(0.8);
+    this.fuelVignette = this.add.image(0, 0, 'vignette').setOrigin(0).setTint(0xff2a3a).setAlpha(0);
+
     // player ore count lives in the leaderboard (row "YOU"); top-left is
-    // just the fuel bar now
-    this.fuelLabel = this.add.text(16, 16, 'FUEL', style);
-    this.fuelBarBg = this.add.rectangle(66, 26, 160, 10, 0x1a2340).setOrigin(0, 0.5);
-    this.fuelBar = this.add.rectangle(66, 26, 160, 10, 0x7df9ff).setOrigin(0, 0.5);
+    // just the fuel gauge now
+    this._buildFuelGauge();
 
     this.msg = this.add.text(0, 0, '', { ...style, fontSize: '20px', color: '#ffd66b' })
       .setOrigin(0.5).setVisible(false);
@@ -54,11 +77,13 @@ export class HUDScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-M', () => Audio.toggleMute());
 
     this.scale.on('resize', () => {
+      this._layoutVignette();
       this._layoutMsg();
       this._layoutMinimap();
       this._layoutLeaderboard();
       this._layoutSummaryPanel();
     });
+    this._layoutVignette();
     this._layoutMsg();
     this._layoutMinimap();
     this._layoutLeaderboard();
@@ -138,6 +163,12 @@ export class HUDScene extends Phaser.Scene {
     // keep the mask aligned with the circular bg (bg is offset by r inside the container)
     const r = MINIMAP.size / 2;
     this.minimapMaskGfx.setPosition(x + r, y + r);
+  }
+
+  _layoutVignette() {
+    const cam = this.cameras.main;
+    this.vignette.setDisplaySize(cam.width, cam.height);
+    this.fuelVignette.setDisplaySize(cam.width, cam.height);
   }
 
   _layoutMsg() {
@@ -222,16 +253,150 @@ export class HUDScene extends Phaser.Scene {
     this.summary.setScale(this._summaryScale);
   }
 
-  update(time) {
+  _buildFuelGauge() {
+    const G = FUEL_GAUGE;
+    this.fuelPanel = this.add.graphics();
+    this.fuelPanel.fillStyle(G.bgColor, G.bgAlpha);
+    this.fuelPanel.fillRoundedRect(G.x, G.y, G.width, G.height, 6);
+    this.fuelPanel.lineStyle(1, G.borderColor, 0.9);
+    this.fuelPanel.strokeRoundedRect(G.x + 0.5, G.y + 0.5, G.width - 1, G.height - 1, 6);
+    // redrawn every frame: icon, segments, damage trail, shimmer
+    this.fuelGfx = this.add.graphics();
+    this.fuelLabel = this.add.text(G.x + G.barX, G.y + 8, 'FUEL', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '10px',
+      fontStyle: 'bold',
+      color: '#8ea1c7',
+      letterSpacing: 2,
+    });
+    this.fuelValue = this.add.text(G.x + G.width - 12, G.y + 7, '', {
+      fontFamily: 'ui-monospace, monospace',
+      fontSize: '11px',
+      fontStyle: 'bold',
+      color: '#cfe4ff',
+    }).setOrigin(1, 0);
+    // "ghost" level trails behind real fuel so sudden losses (rams into
+    // rocks) show up as a white chunk that drains away
+    this._fuelGhost = 1;
+    this._fuelPrev = 1;
+    this._fuelGhostHoldUntil = 0;
+    this._fuelFlashUntil = 0;
+  }
+
+  _fuelColor(pct) {
+    // cyan → amber across 50%..25%, amber → red below that
+    const G = FUEL_GAUGE;
+    // manual RGB mix — Phaser's Interpolate.ColorWithColor has produced
+    // NaN tints before (see Meteor.damage)
+    const lerp = (a, b, t) => {
+      const ch = (shift) => {
+        const ca = (a >> shift) & 0xff, cb = (b >> shift) & 0xff;
+        return Math.round(ca + (cb - ca) * t) << shift;
+      };
+      return ch(16) | ch(8) | ch(0);
+    };
+    if (pct >= 0.5) return G.full;
+    if (pct >= 0.25) return lerp(G.mid, G.full, (pct - 0.25) / 0.25);
+    return lerp(G.low, G.mid, Math.max(0, pct) / 0.25);
+  }
+
+  _drawFuelGauge(time, dt, pct) {
+    const G = FUEL_GAUGE;
+    const g = this.fuelGfx;
+    g.clear();
+
+    // trailing ghost: hold briefly after a sharp drop, then chase down
+    if (pct >= this._fuelGhost) {
+      this._fuelGhost = pct;
+    } else {
+      if (this._fuelPrev - pct > 0.015) this._fuelGhostHoldUntil = time + 450;
+      if (time > this._fuelGhostHoldUntil) this._fuelGhost = Math.max(pct, this._fuelGhost - dt * 0.35);
+    }
+    if (pct > this._fuelPrev + 0.001) this._fuelFlashUntil = time + 160;
+    this._fuelPrev = pct;
+
+    const low = pct < 0.25 && this.player.alive;
+    const blink = low ? 0.55 + 0.45 * Math.sin(time / (pct < 0.12 ? 70 : 130)) : 1;
+    const flash = time < this._fuelFlashUntil ? 0.4 : 0;
+    const base = this._fuelColor(pct);
+    const lighten = (c, t) => {
+      const r = (c >> 16) & 0xff, gg = (c >> 8) & 0xff, b = c & 0xff;
+      return (Math.round(r + (255 - r) * t) << 16) | (Math.round(gg + (255 - gg) * t) << 8) | Math.round(b + (255 - b) * t);
+    };
+    const color = lighten(base, flash);
+    const hi = lighten(base, 0.55);
+
+    // fuel-can icon in the current gauge color
+    const ix = G.x + 13, iy = G.y + 13;
+    g.fillStyle(color, blink);
+    g.fillRect(ix + 2, iy + 4, 14, 16);    // body
+    g.fillRect(ix + 5, iy + 1, 6, 3);      // cap
+    g.fillRect(ix + 12, iy + 1, 4, 2);     // handle
+    g.fillRect(ix + 14, iy + 1, 2, 5);
+    g.fillStyle(G.bgColor, 1);
+    g.fillRect(ix + 5, iy + 8, 8, 2);      // label band
+    g.fillRect(ix + 5, iy + 13, 8, 2);
+    g.fillStyle(0xffffff, 0.35 * blink);
+    g.fillRect(ix + 3, iy + 5, 1, 14);     // lit edge
+
+    // segments: filled, partial, ghost (recent loss), empty
+    const bx = G.x + G.barX, by = G.y + G.barY;
+    const step = G.segW + G.segGap;
+    const barW = G.segments * step - G.segGap;
+    // soft glow behind the filled run
+    const fillW = barW * pct;
+    if (fillW > 0) {
+      g.fillStyle(base, 0.12 * blink);
+      g.fillRect(bx - 3, by - 3, fillW + 6, G.barH + 6);
+    }
+    for (let i = 0; i < G.segments; i++) {
+      const sx = bx + i * step;
+      const s0 = i / G.segments, s1 = (i + 1) / G.segments;
+      g.fillStyle(G.emptyColor, 1);
+      g.fillRect(sx, by, G.segW, G.barH);
+      // ghost part of this segment
+      const gf = Phaser.Math.Clamp((this._fuelGhost - s0) / (s1 - s0), 0, 1);
+      if (gf > 0) {
+        g.fillStyle(0xffffff, 0.55);
+        g.fillRect(sx, by, G.segW * gf, G.barH);
+      }
+      const f = Phaser.Math.Clamp((pct - s0) / (s1 - s0), 0, 1);
+      if (f <= 0) continue;
+      const w = Math.max(1, Math.round(G.segW * f));
+      g.fillStyle(color, blink);
+      g.fillRect(sx, by, w, G.barH);
+      g.fillStyle(hi, blink);
+      g.fillRect(sx, by, w, 2);                     // top highlight
+      g.fillStyle(0x000000, 0.25);
+      g.fillRect(sx, by + G.barH - 2, w, 2);        // bottom shade
+    }
+
+    // boost shimmer: a bright band sweeping along the filled run
+    if (this.player._wasBoosting && this.player.alive && fillW > 8) {
+      const t = (time % 600) / 600;
+      const sx = bx + t * fillW - 6;
+      g.fillStyle(0xffffff, 0.4);
+      g.fillRect(Math.max(bx, sx), by, Math.min(12, bx + fillW - Math.max(bx, sx)), G.barH);
+    }
+
+    this.fuelLabel.setText(low ? 'LOW FUEL' : 'FUEL');
+    this.fuelLabel.setColor(low ? '#ff8a96' : '#8ea1c7');
+    this.fuelLabel.setAlpha(low ? blink : 1);
+    this.fuelValue.setText(`${Math.ceil(pct * 100)}%`);
+    this.fuelValue.setColor('#' + base.toString(16).padStart(6, '0'));
+  }
+
+  update(time, deltaMs = 16) {
     if (!this.player) return;
     const pct = Phaser.Math.Clamp(this.player.fuel / this.player.stats.fuelMax, 0, 1);
-    this.fuelBar.width = 160 * pct;
-    this.fuelBar.fillColor = pct < 0.25 ? 0xff6b7b : 0x7df9ff;
+    this._drawFuelGauge(time, deltaMs / 1000, pct);
     if (this.player.alive && pct < 0.25 && time > this._lowFuelNextBeep) {
       Audio.playLowFuel();
       // blip faster as fuel gets more critical
       this._lowFuelNextBeep = time + (pct < 0.12 ? 380 : 700);
     }
+    const danger = this.player.alive ? Phaser.Math.Clamp((0.25 - pct) / 0.25, 0, 1) : 0;
+    this.fuelVignette.setAlpha(danger * (0.5 + 0.3 * Math.sin(time / (pct < 0.12 ? 90 : 160))));
     this._drawMinimap(time);
     this._drawLeaderboard();
   }
